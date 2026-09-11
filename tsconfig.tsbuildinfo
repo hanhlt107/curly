@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/components/historypanel.tsx","./src/components/keyvalueeditor.tsx","./src/components/responseview.tsx","./src/config/apiclient.ts","./src/hooks/usehistory.ts","./src/types/request.ts"],"version":"5.9.3"}
