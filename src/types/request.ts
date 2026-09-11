@@ -7,7 +7,7 @@ export interface KeyValue {
   value: string;
 }
 
-export type BodyType = 'none' | 'json' | 'raw';
+export type BodyType = 'none' | 'json' | 'raw' | 'graphql' | 'form' | 'urlencoded';
 
 export type AuthType = 'none' | 'bearer' | 'basic' | 'apikey';
 export type ApiKeyIn = 'header' | 'query';
@@ -41,6 +41,8 @@ export interface ApiRequest {
   headers: KeyValue[];
   bodyType: BodyType;
   body: string;
+  formData: KeyValue[];
+  graphqlVars: string;
   auth: Auth;
   tests: string;
 }

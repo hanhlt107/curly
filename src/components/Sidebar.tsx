@@ -8,6 +8,7 @@ interface Props {
   onOpenHistory: (entry: HistoryEntry) => void;
   onAddCollection: (name: string) => void;
   onRenameCollection: (id: string, name: string) => void;
+  onRunCollection: (id: string) => void;
   onDeleteCollection: (id: string) => void;
   onDeleteSaved: (collectionId: string, requestId: string) => void;
   onClearHistory: () => void;
@@ -30,6 +31,7 @@ export default function Sidebar({
   onOpenHistory,
   onAddCollection,
   onRenameCollection,
+  onRunCollection,
   onDeleteCollection,
   onDeleteSaved,
   onClearHistory,
@@ -103,6 +105,18 @@ export default function Sidebar({
                     </span>
                   )}
                   <span className="tree-count">{c.requests.length}</span>
+                  {c.requests.length > 0 && (
+                    <button
+                      className="row-run"
+                      title="Chạy cả collection"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRunCollection(c.id);
+                      }}
+                    >
+                      ▶
+                    </button>
+                  )}
                   <button
                     className="row-del"
                     title="Xóa collection"

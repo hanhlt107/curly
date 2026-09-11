@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import KeyValueEditor from './components/KeyValueEditor';
 import ResponseView from './components/ResponseView';
 import Sidebar from './components/Sidebar';
@@ -7,7 +7,12 @@ import AuthPanel from './components/AuthPanel';
 import EnvironmentBar from './components/EnvironmentBar';
 import MethodSelect from './components/MethodSelect';
 import CodeModal from './components/CodeModal';
+import CommandPalette, { type Command } from './components/CommandPalette';
 import { runTests, TEST_PLACEHOLDER, type TestResult } from './config/tests';
+import { buildExport, parseWorkspace } from './config/workspace';
+import { buildShareLink, readSharedRequest } from './config/share';
+import { toCurl } from './config/curl';
+import RunnerModal from './components/RunnerModal';
 import SaveModal from './components/SaveModal';
 import { envToRecord, resolveVars, sendRequest } from './config/apiClient';
 import { useStore } from './hooks/useStore';
@@ -27,6 +32,11 @@ export default function App() {
   const [reqTab, setReqTab] = useState<ReqTab>('params');
   const [saveOpen, setSaveOpen] = useState(false);
   const [codeOpen, setCodeOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [runnerId, setRunnerId] = useState<string | null>(null);
+  const [showCurl, setShowCurl] = useState(false);
+  const [shared, setShared] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const [respByTab, setRespByTab] = useState<
     Record<
@@ -34,6 +44,7 @@ export default function App() {
       {
         loading: boolean;
         response: ApiResponse | null;
+        prevResponse?: ApiResponse | null;
         error: RequestError | null;
         tests?: TestResult[];
       }
@@ -63,11 +74,12 @@ export default function App() {
       setState(tab.id, { error: { message: 'Chưa nhập URL' }, response: null });
       return;
     }
+    const prevResponse = respByTab[tab.id]?.response ?? null;
     setState(tab.id, { loading: true, error: null, response: null, tests: undefined });
     try {
       const res = await sendRequest(req, vars);
       const tests = req.tests.trim() ? runTests(req.tests, res) : undefined;
-      setState(tab.id, { loading: false, response: res, tests });
+      setState(tab.id, { loading: false, response: res, prevResponse, tests });
       store.addHistory(req, res.status);
     } catch (err) {
       setState(tab.id, { loading: false, error: err as RequestError });
@@ -77,6 +89,100 @@ export default function App() {
 
   const resolvedUrl = req.url ? resolveVars(req.url, vars) : '';
   const urlHasVar = /\{\{[\w.-]+\}\}/.test(req.url);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  useEffect(() => {
+    const r = readSharedRequest();
+    if (r) {
+      store.openRequest(r, r.url || 'Shared');
+      history.replaceState(null, '', location.pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const shareRequest = () => {
+    const link = buildShareLink(req);
+    navigator.clipboard?.writeText(link);
+    setShared(true);
+    setTimeout(() => setShared(false), 1600);
+  };
+
+  const curlPreview = useMemo(() => toCurl(req), [req]);
+
+  const copyCurl = () => {
+    navigator.clipboard?.writeText(curlPreview);
+  };
+
+  const exportWorkspace = () => {
+    const data = buildExport(store.collections, store.environments);
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `curly-workspace-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const { collections, environments } = parseWorkspace(String(reader.result));
+        store.importWorkspace(collections, environments);
+      } catch (err) {
+        alert((err as Error).message || 'Không đọc được file.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const commands: Command[] = useMemo(() => {
+    const list: Command[] = [
+      { id: 'new-tab', group: 'Lệnh', label: 'Tab mới', hint: 'New', run: () => store.openTab() },
+      { id: 'save', group: 'Lệnh', label: 'Lưu request', hint: 'Save', run: () => setSaveOpen(true) },
+      { id: 'code', group: 'Lệnh', label: 'Import cURL / Code snippet', run: () => setCodeOpen(true) },
+      { id: 'export', group: 'Lệnh', label: 'Export workspace', run: exportWorkspace },
+      { id: 'import', group: 'Lệnh', label: 'Import workspace / Postman', run: () => fileRef.current?.click() },
+      {
+        id: 'no-env',
+        group: 'Environment',
+        label: 'No Environment',
+        run: () => store.setActiveEnvId(null),
+      },
+    ];
+    for (const c of store.collections) {
+      for (const r of c.requests) {
+        list.push({
+          id: `req-${r.id}`,
+          group: c.name,
+          label: r.name,
+          hint: r.request.method,
+          run: () => store.openSaved(r),
+        });
+      }
+    }
+    for (const e of store.environments) {
+      list.push({
+        id: `env-${e.id}`,
+        group: 'Environment',
+        label: e.name,
+        run: () => store.setActiveEnvId(e.id),
+      });
+    }
+    return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [store.collections, store.environments]);
 
   return (
     <div className="app">
@@ -90,6 +196,28 @@ export default function App() {
           onUpdate={store.updateEnvironment}
           onDelete={store.deleteEnvironment}
         />
+        <div className="topbar-actions">
+          <button className="ghost-btn sm" onClick={() => setPaletteOpen(true)} title="Ctrl/⌘ + K">
+            <span className="kbd">⌘K</span> Tìm nhanh
+          </button>
+          <button className="ghost-btn sm" onClick={exportWorkspace} title="Export ra file JSON">
+            ↥ Export
+          </button>
+          <button className="ghost-btn sm" onClick={() => fileRef.current?.click()} title="Import Curly / Postman">
+            ↧ Import
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) importFile(f);
+              e.target.value = '';
+            }}
+          />
+        </div>
       </header>
 
       <div className="layout">
@@ -107,6 +235,7 @@ export default function App() {
           }
           onAddCollection={store.addCollection}
           onRenameCollection={store.renameCollection}
+          onRunCollection={setRunnerId}
           onDeleteCollection={store.deleteCollection}
           onDeleteSaved={store.deleteSaved}
           onClearHistory={store.clearHistory}
@@ -154,6 +283,27 @@ export default function App() {
             >
               &lt;/&gt;
             </button>
+            <button
+              className="code-btn share-btn"
+              onClick={shareRequest}
+              title="Copy link chia sẻ request"
+            >
+              {shared ? '✓' : '🔗'}
+            </button>
+          </div>
+
+          <div className={`curl-strip ${showCurl ? 'open' : ''}`}>
+            <button className="curl-toggle" onClick={() => setShowCurl((v) => !v)}>
+              <span className={`caret ${showCurl ? 'open' : ''}`}>▸</span> cURL
+            </button>
+            {showCurl && (
+              <div className="curl-live">
+                <pre>{curlPreview}</pre>
+                <button className="copy-btn" onClick={copyCurl}>
+                  Copy
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="req-tabs">
@@ -203,25 +353,70 @@ export default function App() {
             {reqTab === 'body' && (
               <div className="body-panel">
                 <div className="body-types">
-                  {(['none', 'json', 'raw'] as BodyType[]).map((bt) => (
+                  {(
+                    [
+                      ['none', 'none'],
+                      ['json', 'JSON'],
+                      ['raw', 'Raw'],
+                      ['graphql', 'GraphQL'],
+                      ['form', 'Form-data'],
+                      ['urlencoded', 'URL-encoded'],
+                    ] as [BodyType, string][]
+                  ).map(([bt, label]) => (
                     <label key={bt}>
                       <input
                         type="radio"
                         name="bodyType"
                         checked={req.bodyType === bt}
-                        onChange={() => store.updateActiveRequest({ bodyType: bt })}
+                        onChange={() =>
+                          store.updateActiveRequest(
+                            bt === 'graphql' && req.method === 'GET'
+                              ? { bodyType: bt, method: 'POST' }
+                              : { bodyType: bt },
+                          )
+                        }
                       />
-                      {bt === 'none' ? 'none' : bt.toUpperCase()}
+                      {label}
                     </label>
                   ))}
                 </div>
-                {req.bodyType !== 'none' && (
+
+                {(req.bodyType === 'json' || req.bodyType === 'raw') && (
                   <textarea
                     className="body-input"
                     value={req.body}
                     placeholder={req.bodyType === 'json' ? '{\n  "key": "value"\n}' : 'raw body'}
                     onChange={(e) => store.updateActiveRequest({ body: e.target.value })}
                     spellCheck={false}
+                  />
+                )}
+
+                {req.bodyType === 'graphql' && (
+                  <div className="gql-panel">
+                    <label className="field-label">Query</label>
+                    <textarea
+                      className="body-input gql-query"
+                      value={req.body}
+                      placeholder={'query {\n  users {\n    id\n    name\n  }\n}'}
+                      onChange={(e) => store.updateActiveRequest({ body: e.target.value })}
+                      spellCheck={false}
+                    />
+                    <label className="field-label">Variables (JSON)</label>
+                    <textarea
+                      className="body-input gql-vars"
+                      value={req.graphqlVars}
+                      placeholder={'{\n  "id": 1\n}'}
+                      onChange={(e) => store.updateActiveRequest({ graphqlVars: e.target.value })}
+                      spellCheck={false}
+                    />
+                  </div>
+                )}
+
+                {(req.bodyType === 'form' || req.bodyType === 'urlencoded') && (
+                  <KeyValueEditor
+                    items={req.formData}
+                    onChange={(formData) => store.updateActiveRequest({ formData })}
+                    keyPlaceholder="Field"
                   />
                 )}
               </div>
@@ -247,6 +442,7 @@ export default function App() {
           <ResponseView
             loading={state.loading}
             response={state.response}
+            prevResponse={state.prevResponse ?? null}
             error={state.error}
             tests={state.tests}
           />
@@ -270,6 +466,18 @@ export default function App() {
           onClose={() => setCodeOpen(false)}
         />
       )}
+
+      {paletteOpen && (
+        <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />
+      )}
+
+      {runnerId &&
+        (() => {
+          const col = store.collections.find((c) => c.id === runnerId);
+          return col ? (
+            <RunnerModal collection={col} vars={vars} onClose={() => setRunnerId(null)} />
+          ) : null;
+        })()}
     </div>
   );
 }

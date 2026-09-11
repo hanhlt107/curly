@@ -1,16 +1,18 @@
 import { useMemo, useState } from 'react';
 import type { ApiResponse, RequestError } from '../types/request';
 import type { TestResult } from '../config/tests';
+import { diffValues, diffSummary } from '../config/diff';
 
 interface Props {
   loading: boolean;
   response: ApiResponse | null;
+  prevResponse?: ApiResponse | null;
   error: RequestError | null;
   tests?: TestResult[];
 }
 
 type BodyMode = 'pretty' | 'raw' | 'preview';
-type Tab = 'body' | 'headers' | 'cookies' | 'tests';
+type Tab = 'body' | 'headers' | 'cookies' | 'tests' | 'diff';
 
 function parseCookies(headers: Record<string, string>): { name: string; value: string; attrs: string }[] {
   const raw = headers['set-cookie'];
@@ -82,7 +84,7 @@ function highlightSearch(html: string, term: string): string {
   return html.replace(new RegExp(`(${safe})`, 'gi'), '<mark>$1</mark>');
 }
 
-export default function ResponseView({ loading, response, error, tests }: Props) {
+export default function ResponseView({ loading, response, prevResponse, error, tests }: Props) {
   const [tab, setTab] = useState<Tab>('body');
   const [mode, setMode] = useState<BodyMode>('pretty');
   const [search, setSearch] = useState('');
@@ -98,6 +100,11 @@ export default function ResponseView({ loading, response, error, tests }: Props)
     const text = mode === 'raw' ? response.raw : pretty;
     return highlightSearch(highlightJson(text), search);
   }, [response, mode, pretty, search]);
+
+  const diffRows = useMemo(
+    () => (prevResponse && response ? diffValues(prevResponse.data, response.data) : []),
+    [prevResponse, response],
+  );
 
   if (loading) {
     return (
@@ -131,6 +138,8 @@ export default function ResponseView({ loading, response, error, tests }: Props)
   const isHtml = /text\/html/i.test(response.headers['content-type'] || '');
   const testCount = tests?.length ?? 0;
   const testPass = tests?.filter((t) => t.passed).length ?? 0;
+  const diffChanges = diffSummary(diffRows);
+  const hasDiff = !!prevResponse && diffChanges.added + diffChanges.removed + diffChanges.changed > 0;
 
   const copy = () => {
     const text = mode === 'raw' ? response.raw : pretty;
@@ -177,6 +186,11 @@ export default function ResponseView({ loading, response, error, tests }: Props)
               <span className={`pill ${testPass === testCount ? 'pill-ok' : 'pill-err'}`}>
                 {testPass}/{testCount}
               </span>
+            </button>
+          )}
+          {hasDiff && (
+            <button className={tab === 'diff' ? 'active' : ''} onClick={() => setTab('diff')}>
+              Diff <span className="pill pill-diff">⇄</span>
             </button>
           )}
         </div>
@@ -259,6 +273,44 @@ export default function ResponseView({ loading, response, error, tests }: Props)
             </li>
           ))}
         </ul>
+      )}
+
+      {tab === 'diff' && (
+        <div className="diff-view">
+          <div className="diff-legend">
+            <span className="dl added">+{diffChanges.added} thêm</span>
+            <span className="dl removed">−{diffChanges.removed} bớt</span>
+            <span className="dl changed">±{diffChanges.changed} đổi</span>
+            <span className="diff-note">so với lần gọi trước</span>
+          </div>
+          <table className="diff-table">
+            <tbody>
+              {diffRows
+                .filter((r) => r.kind !== 'same')
+                .map((r, i) => (
+                  <tr key={i} className={`diff-${r.kind}`}>
+                    <td className="diff-sign">
+                      {r.kind === 'added' ? '+' : r.kind === 'removed' ? '−' : '±'}
+                    </td>
+                    <td className="diff-path">{r.path}</td>
+                    <td className="diff-val">
+                      {r.kind === 'added' ? (
+                        <span className="dv-right">{r.right}</span>
+                      ) : r.kind === 'removed' ? (
+                        <span className="dv-left">{r.left}</span>
+                      ) : (
+                        <>
+                          <span className="dv-left">{r.left}</span>
+                          <span className="dv-arrow">→</span>
+                          <span className="dv-right">{r.right}</span>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

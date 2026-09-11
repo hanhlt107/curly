@@ -44,7 +44,32 @@ function byteSize(text: string): number {
 }
 
 function parseBody(req: ApiRequest, vars: Record<string, string>): unknown {
-  if (req.bodyType === 'none' || !req.body.trim()) return undefined;
+  if (req.bodyType === 'none') return undefined;
+
+  if (req.bodyType === 'graphql') {
+    const query = resolveVars(req.body, vars);
+    if (!query.trim()) return undefined;
+    let variables: unknown = undefined;
+    if (req.graphqlVars.trim()) variables = JSON.parse(resolveVars(req.graphqlVars, vars));
+    return variables !== undefined ? { query, variables } : { query };
+  }
+
+  if (req.bodyType === 'form' || req.bodyType === 'urlencoded') {
+    const pairs = req.formData.filter((p) => p.enabled && p.key.trim());
+    if (req.bodyType === 'urlencoded') {
+      return pairs
+        .map(
+          (p) =>
+            `${encodeURIComponent(resolveVars(p.key, vars))}=${encodeURIComponent(resolveVars(p.value, vars))}`,
+        )
+        .join('&');
+    }
+    const fd = new FormData();
+    for (const p of pairs) fd.append(resolveVars(p.key, vars), resolveVars(p.value, vars));
+    return fd;
+  }
+
+  if (!req.body.trim()) return undefined;
   const resolved = resolveVars(req.body, vars);
   if (req.bodyType === 'json') {
     return JSON.parse(resolved);
@@ -97,8 +122,12 @@ export async function sendRequest(
   const params = toRecord(req.params, vars);
   applyAuth(req, headers, params, vars);
 
-  if (req.bodyType === 'json' && !headerHas(headers, 'content-type')) {
-    headers['Content-Type'] = 'application/json';
+  if (!headerHas(headers, 'content-type')) {
+    if (req.bodyType === 'json' || req.bodyType === 'graphql') {
+      headers['Content-Type'] = 'application/json';
+    } else if (req.bodyType === 'urlencoded') {
+      headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    }
   }
 
   let data: unknown;

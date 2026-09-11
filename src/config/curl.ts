@@ -146,7 +146,18 @@ export function parseCurl(input: string): ApiRequest {
       });
   }
 
-  return { method, url, params, headers, bodyType, body, auth, tests: '' };
+  return {
+    method,
+    url,
+    params,
+    headers,
+    bodyType,
+    body,
+    formData: [row('', '')],
+    graphqlVars: '',
+    auth,
+    tests: '',
+  };
 }
 
 function quote(s: string): string {

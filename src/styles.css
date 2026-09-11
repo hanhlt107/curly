@@ -1485,3 +1485,438 @@ code {
   color: var(--faint);
   font-size: 12px;
 }
+
+/* Topbar actions */
+.topbar {
+  gap: 16px;
+}
+
+.topbar h1 {
+  margin-right: auto;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ghost-btn.sm {
+  padding: 7px 12px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kbd {
+  font-family: 'Cascadia Code', monospace;
+  font-size: 11px;
+  background: var(--panel-3);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 5px;
+  color: var(--faint);
+}
+
+/* Command palette */
+.cmd-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 8, 18, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  z-index: 100;
+  animation: fadeIn 0.12s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.cmd-palette {
+  width: min(600px, 92vw);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  animation: menuIn 0.16s ease;
+}
+
+.cmd-input {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  padding: 16px 18px;
+  font-size: 15px;
+  color: var(--text);
+  outline: none;
+}
+
+.cmd-list {
+  max-height: 340px;
+  overflow: auto;
+  padding: 6px;
+}
+
+.cmd-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--faint);
+}
+
+.cmd-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.cmd-item.active {
+  background: var(--accent-grad);
+}
+
+.cmd-item.active .cmd-group,
+.cmd-item.active .cmd-hint {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.cmd-group {
+  font-size: 11px;
+  color: var(--faint);
+  min-width: 90px;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.cmd-label {
+  flex: 1;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.cmd-hint {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  font-family: 'Cascadia Code', monospace;
+}
+
+/* GraphQL body */
+.gql-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.gql-query {
+  min-height: 130px;
+}
+
+.gql-vars {
+  min-height: 70px;
+}
+
+/* Share button */
+.share-btn {
+  color: var(--accent-2);
+}
+
+.share-btn:hover {
+  border-color: var(--accent-2);
+  background: rgba(255, 77, 141, 0.12);
+}
+
+/* cURL live strip */
+.curl-strip {
+  padding: 0 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+
+.curl-toggle {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  padding: 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: uppercase;
+}
+
+.curl-toggle:hover {
+  color: var(--accent);
+}
+
+.curl-live {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 0 0 12px;
+}
+
+.curl-live pre {
+  flex: 1;
+  margin: 0;
+  background: #0a0c17;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: 'Cascadia Code', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #cdd3f0;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Run button trong sidebar */
+.row-run {
+  background: none;
+  border: none;
+  color: var(--faint);
+  font-size: 10px;
+  padding: 2px 5px;
+  border-radius: 5px;
+  opacity: 0;
+}
+
+.tree-col-head:hover .row-run {
+  opacity: 1;
+}
+
+.row-run:hover {
+  color: var(--ok);
+  background: rgba(52, 211, 153, 0.14);
+}
+
+/* Runner modal */
+.runner-modal {
+  width: min(680px, 94vw);
+}
+
+.run-spin,
+.run-dot.running::after {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-left: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+
+.runner-summary {
+  display: flex;
+  gap: 10px;
+  padding: 12px 20px 0;
+}
+
+.rs {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 12px;
+  border-radius: 999px;
+}
+
+.rs.ok {
+  color: var(--ok);
+  background: rgba(52, 211, 153, 0.14);
+}
+
+.rs.err {
+  color: var(--err);
+  background: rgba(248, 113, 113, 0.14);
+}
+
+.rs.total {
+  color: var(--muted);
+  background: var(--panel-2);
+}
+
+.runner-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.runner-table th {
+  text-align: left;
+  color: var(--faint);
+  font-size: 11px;
+  text-transform: uppercase;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.runner-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.runner-table tr.run-running {
+  background: rgba(255, 122, 89, 0.06);
+}
+
+.run-dot {
+  font-size: 12px;
+}
+
+.run-dot.running {
+  color: var(--accent);
+}
+
+.run-dot.pending {
+  color: var(--faint);
+}
+
+.badge.sm {
+  font-size: 11px;
+  padding: 1px 8px;
+}
+
+.tests-ok {
+  color: var(--ok);
+  font-weight: 700;
+}
+
+.tests-fail {
+  color: var(--err);
+  font-weight: 700;
+}
+
+/* Diff view */
+.pill-diff {
+  background: var(--info) !important;
+}
+
+.diff-view {
+  overflow: auto;
+  padding: 12px 16px;
+}
+
+.diff-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.dl {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 999px;
+}
+
+.dl.added {
+  color: var(--ok);
+  background: rgba(52, 211, 153, 0.14);
+}
+
+.dl.removed {
+  color: var(--err);
+  background: rgba(248, 113, 113, 0.14);
+}
+
+.dl.changed {
+  color: var(--redirect);
+  background: rgba(251, 191, 36, 0.14);
+}
+
+.diff-note {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.diff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Cascadia Code', monospace;
+  font-size: 12px;
+}
+
+.diff-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  vertical-align: top;
+}
+
+.diff-sign {
+  width: 20px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.diff-added .diff-sign {
+  color: var(--ok);
+}
+
+.diff-removed .diff-sign {
+  color: var(--err);
+}
+
+.diff-changed .diff-sign {
+  color: var(--redirect);
+}
+
+.diff-added {
+  background: rgba(52, 211, 153, 0.06);
+}
+
+.diff-removed {
+  background: rgba(248, 113, 113, 0.06);
+}
+
+.diff-changed {
+  background: rgba(251, 191, 36, 0.05);
+}
+
+.diff-path {
+  color: var(--info);
+  white-space: nowrap;
+}
+
+.diff-val {
+  color: var(--text);
+  word-break: break-all;
+}
+
+.dv-left {
+  color: var(--err);
+  text-decoration: line-through;
+  opacity: 0.8;
+}
+
+.dv-arrow {
+  margin: 0 8px;
+  color: var(--faint);
+}
+
+.dv-right {
+  color: var(--ok);
+}

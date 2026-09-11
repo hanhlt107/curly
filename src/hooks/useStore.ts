@@ -20,13 +20,22 @@ export function blankRequest(): ApiRequest {
     headers: [row()],
     bodyType: 'none',
     body: '',
+    formData: [row()],
+    graphqlVars: '',
     auth: emptyAuth(),
     tests: '',
   };
 }
 
 function normalizeRequest(r: ApiRequest): ApiRequest {
-  return { ...r, auth: { ...emptyAuth(), ...r.auth }, tests: r.tests ?? '' };
+  const row = () => ({ id: crypto.randomUUID(), enabled: true, key: '', value: '' });
+  return {
+    ...r,
+    formData: r.formData?.length ? r.formData : [row()],
+    graphqlVars: r.graphqlVars ?? '',
+    auth: { ...emptyAuth(), ...r.auth },
+    tests: r.tests ?? '',
+  };
 }
 
 function newTab(name = 'Request mới', request = blankRequest()): RequestTab {
@@ -167,6 +176,12 @@ export function useStore() {
     setCollections((prev) => prev.filter((c) => c.id !== id));
   }, []);
 
+  const importWorkspace = useCallback((cols: Collection[], envs: Environment[]) => {
+    setCollections((prev) => [...prev, ...cols]);
+    setEnvironments((prev) => [...prev, ...envs]);
+    if (envs.length) setActiveEnvId(envs[0].id);
+  }, []);
+
   const deleteSaved = useCallback((collectionId: string, requestId: string) => {
     setCollections((prev) =>
       prev.map((c) =>
@@ -261,6 +276,7 @@ export function useStore() {
     addCollection,
     renameCollection,
     deleteCollection,
+    importWorkspace,
     deleteSaved,
     saveTabToCollection,
     // environments
