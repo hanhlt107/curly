@@ -5,6 +5,9 @@ import Sidebar from './components/Sidebar';
 import TabBar from './components/TabBar';
 import AuthPanel from './components/AuthPanel';
 import EnvironmentBar from './components/EnvironmentBar';
+import MethodSelect from './components/MethodSelect';
+import CodeModal from './components/CodeModal';
+import { runTests, TEST_PLACEHOLDER, type TestResult } from './config/tests';
 import SaveModal from './components/SaveModal';
 import { envToRecord, resolveVars, sendRequest } from './config/apiClient';
 import { useStore } from './hooks/useStore';
@@ -17,16 +20,24 @@ import type {
 } from './types/request';
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
-type ReqTab = 'params' | 'auth' | 'headers' | 'body';
+type ReqTab = 'params' | 'auth' | 'headers' | 'body' | 'tests';
 
 export default function App() {
   const store = useStore();
   const [reqTab, setReqTab] = useState<ReqTab>('params');
   const [saveOpen, setSaveOpen] = useState(false);
+  const [codeOpen, setCodeOpen] = useState(false);
 
-  // response state per tab
   const [respByTab, setRespByTab] = useState<
-    Record<string, { loading: boolean; response: ApiResponse | null; error: RequestError | null }>
+    Record<
+      string,
+      {
+        loading: boolean;
+        response: ApiResponse | null;
+        error: RequestError | null;
+        tests?: TestResult[];
+      }
+    >
   >({});
 
   const tab = store.activeTab;
@@ -52,10 +63,11 @@ export default function App() {
       setState(tab.id, { error: { message: 'Chưa nhập URL' }, response: null });
       return;
     }
-    setState(tab.id, { loading: true, error: null, response: null });
+    setState(tab.id, { loading: true, error: null, response: null, tests: undefined });
     try {
       const res = await sendRequest(req, vars);
-      setState(tab.id, { loading: false, response: res });
+      const tests = req.tests.trim() ? runTests(req.tests, res) : undefined;
+      setState(tab.id, { loading: false, response: res, tests });
       store.addHistory(req, res.status);
     } catch (err) {
       setState(tab.id, { loading: false, error: err as RequestError });
@@ -94,6 +106,7 @@ export default function App() {
             })
           }
           onAddCollection={store.addCollection}
+          onRenameCollection={store.renameCollection}
           onDeleteCollection={store.deleteCollection}
           onDeleteSaved={store.deleteSaved}
           onClearHistory={store.clearHistory}
@@ -109,17 +122,11 @@ export default function App() {
           />
 
           <div className="url-bar">
-            <select
-              className={`method-select m-${req.method}`}
+            <MethodSelect
+              methods={METHODS}
               value={req.method}
-              onChange={(e) => store.updateActiveRequest({ method: e.target.value as HttpMethod })}
-            >
-              {METHODS.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
+              onChange={(m) => store.updateActiveRequest({ method: m })}
+            />
             <div className="url-wrap">
               <input
                 className="url-input"
@@ -140,6 +147,13 @@ export default function App() {
             <button className="save-btn" onClick={() => setSaveOpen(true)} title="Lưu vào collection">
               Save
             </button>
+            <button
+              className="code-btn"
+              onClick={() => setCodeOpen(true)}
+              title="Import cURL / xuất code snippet"
+            >
+              &lt;/&gt;
+            </button>
           </div>
 
           <div className="req-tabs">
@@ -157,6 +171,9 @@ export default function App() {
             </button>
             <button className={reqTab === 'body' ? 'active' : ''} onClick={() => setReqTab('body')}>
               Body{req.bodyType !== 'none' ? <span className="pill dot-pill">●</span> : null}
+            </button>
+            <button className={reqTab === 'tests' ? 'active' : ''} onClick={() => setReqTab('tests')}>
+              Tests{req.tests.trim() ? <span className="pill dot-pill">●</span> : null}
             </button>
           </div>
 
@@ -209,9 +226,30 @@ export default function App() {
                 )}
               </div>
             )}
+            {reqTab === 'tests' && (
+              <div className="tests-panel">
+                <div className="tests-hint">
+                  Mỗi dòng một assertion. Cú pháp: <code>status === 200</code>,{' '}
+                  <code>time &lt; 2000</code>, <code>body contains "id"</code>,{' '}
+                  <code>json data.id === 1</code>
+                </div>
+                <textarea
+                  className="body-input tests-input"
+                  value={req.tests}
+                  placeholder={TEST_PLACEHOLDER}
+                  onChange={(e) => store.updateActiveRequest({ tests: e.target.value })}
+                  spellCheck={false}
+                />
+              </div>
+            )}
           </div>
 
-          <ResponseView loading={state.loading} response={state.response} error={state.error} />
+          <ResponseView
+            loading={state.loading}
+            response={state.response}
+            error={state.error}
+            tests={state.tests}
+          />
         </main>
       </div>
 
@@ -222,6 +260,14 @@ export default function App() {
           onCreateCollection={store.addCollection}
           onSave={(cid, name) => store.saveTabToCollection(tab.id, cid, name)}
           onClose={() => setSaveOpen(false)}
+        />
+      )}
+
+      {codeOpen && (
+        <CodeModal
+          request={req}
+          onImport={(r) => store.openRequest(r, r.url || 'Imported')}
+          onClose={() => setCodeOpen(false)}
         />
       )}
     </div>

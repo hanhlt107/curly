@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Collection } from '../types/request';
 
 interface Props {
@@ -19,9 +19,15 @@ export default function SaveModal({
   const [name, setName] = useState(defaultName || 'Request mới');
   const [collectionId, setCollectionId] = useState(collections[0]?.id ?? '');
 
+  useEffect(() => {
+    const stillExists = collections.some((c) => c.id === collectionId);
+    if (!stillExists && collections.length) {
+      setCollectionId(collections[collections.length - 1].id);
+    }
+  }, [collections, collectionId]);
+
   const create = () => {
-    const cn = window.prompt('Tên collection mới:');
-    if (cn) onCreateCollection(cn);
+    onCreateCollection(`Collection ${collections.length + 1}`);
   };
 
   const save = () => {

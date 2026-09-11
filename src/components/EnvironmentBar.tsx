@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Environment, KeyValue } from '../types/request';
 import KeyValueEditor, { newRow } from './KeyValueEditor';
 
@@ -22,6 +23,12 @@ export default function EnvironmentBar({
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(activeEnvId);
 
+  useEffect(() => {
+    if (!open) return;
+    const exists = environments.some((e) => e.id === editingId);
+    if (!exists) setEditingId(activeEnvId ?? environments[environments.length - 1]?.id ?? null);
+  }, [open, environments, editingId, activeEnvId]);
+
   const editing = environments.find((e) => e.id === editingId) ?? null;
 
   const openModal = () => {
@@ -30,8 +37,7 @@ export default function EnvironmentBar({
   };
 
   const promptNew = () => {
-    const name = window.prompt('Tên environment:');
-    if (name !== null) onAdd(name);
+    onAdd(`Environment ${environments.length + 1}`);
   };
 
   return (
@@ -55,7 +61,7 @@ export default function EnvironmentBar({
         </button>
       </div>
 
-      {open && (
+      {open && createPortal(
         <div className="modal-overlay" onClick={() => setOpen(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
@@ -114,7 +120,8 @@ export default function EnvironmentBar({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );

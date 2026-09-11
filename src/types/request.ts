@@ -42,6 +42,7 @@ export interface ApiRequest {
   bodyType: BodyType;
   body: string;
   auth: Auth;
+  tests: string;
 }
 
 export interface ApiResponse {

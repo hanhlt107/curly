@@ -35,11 +35,11 @@ export default function KeyValueEditor({ items, onChange, keyPlaceholder = 'Key'
                 value={it.key}
                 placeholder={keyPlaceholder}
                 onChange={(e) => {
+                  const value = e.target.value;
                   const isLast = rows[rows.length - 1].id === it.id;
-                  const next = rows.map((r) =>
-                    r.id === it.id ? { ...r, key: e.target.value } : r,
-                  );
-                  if (isLast && e.target.value) next.push(newRow());
+                  const wasEmpty = it.key === '';
+                  const next = rows.map((r) => (r.id === it.id ? { ...r, key: value } : r));
+                  if (isLast && wasEmpty && value) next.push(newRow());
                   onChange(next);
                 }}
               />

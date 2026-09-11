@@ -1,14 +1,34 @@
 import { useMemo, useState } from 'react';
 import type { ApiResponse, RequestError } from '../types/request';
+import type { TestResult } from '../config/tests';
 
 interface Props {
   loading: boolean;
   response: ApiResponse | null;
   error: RequestError | null;
+  tests?: TestResult[];
 }
 
 type BodyMode = 'pretty' | 'raw' | 'preview';
-type Tab = 'body' | 'headers';
+type Tab = 'body' | 'headers' | 'cookies' | 'tests';
+
+function parseCookies(headers: Record<string, string>): { name: string; value: string; attrs: string }[] {
+  const raw = headers['set-cookie'];
+  if (!raw) return [];
+  return raw
+    .split(/,(?=[^;]+?=)/)
+    .map((c) => c.trim())
+    .filter(Boolean)
+    .map((c) => {
+      const [pair, ...rest] = c.split(';');
+      const eq = pair.indexOf('=');
+      return {
+        name: eq > -1 ? pair.slice(0, eq).trim() : pair.trim(),
+        value: eq > -1 ? pair.slice(eq + 1).trim() : '',
+        attrs: rest.map((r) => r.trim()).join('; '),
+      };
+    });
+}
 
 function statusClass(status: number): string {
   if (status >= 200 && status < 300) return 'ok';
@@ -62,7 +82,7 @@ function highlightSearch(html: string, term: string): string {
   return html.replace(new RegExp(`(${safe})`, 'gi'), '<mark>$1</mark>');
 }
 
-export default function ResponseView({ loading, response, error }: Props) {
+export default function ResponseView({ loading, response, error, tests }: Props) {
   const [tab, setTab] = useState<Tab>('body');
   const [mode, setMode] = useState<BodyMode>('pretty');
   const [search, setSearch] = useState('');
@@ -107,7 +127,10 @@ export default function ResponseView({ loading, response, error }: Props) {
   }
 
   const headerEntries = Object.entries(response.headers);
+  const cookies = parseCookies(response.headers);
   const isHtml = /text\/html/i.test(response.headers['content-type'] || '');
+  const testCount = tests?.length ?? 0;
+  const testPass = tests?.filter((t) => t.passed).length ?? 0;
 
   const copy = () => {
     const text = mode === 'raw' ? response.raw : pretty;
@@ -128,6 +151,11 @@ export default function ResponseView({ loading, response, error }: Props) {
         <span className="meta-item">
           <b>{formatSize(response.sizeBytes)}</b>
         </span>
+        {testCount > 0 && (
+          <span className={`meta-tests ${testPass === testCount ? 'ok' : 'error'}`}>
+            Tests {testPass}/{testCount}
+          </span>
+        )}
       </div>
 
       <div className="resp-tabbar">
@@ -138,6 +166,19 @@ export default function ResponseView({ loading, response, error }: Props) {
           <button className={tab === 'headers' ? 'active' : ''} onClick={() => setTab('headers')}>
             Headers <span className="pill">{headerEntries.length}</span>
           </button>
+          {cookies.length > 0 && (
+            <button className={tab === 'cookies' ? 'active' : ''} onClick={() => setTab('cookies')}>
+              Cookies <span className="pill">{cookies.length}</span>
+            </button>
+          )}
+          {testCount > 0 && (
+            <button className={tab === 'tests' ? 'active' : ''} onClick={() => setTab('tests')}>
+              Tests{' '}
+              <span className={`pill ${testPass === testCount ? 'pill-ok' : 'pill-err'}`}>
+                {testPass}/{testCount}
+              </span>
+            </button>
+          )}
         </div>
 
         {tab === 'body' && (
@@ -171,21 +212,17 @@ export default function ResponseView({ loading, response, error }: Props) {
         )}
       </div>
 
-      {tab === 'body' ? (
-        mode === 'preview' && isHtml ? (
-          <iframe
-            className="resp-preview"
-            sandbox=""
-            title="preview"
-            srcDoc={response.raw}
-          />
+      {tab === 'body' &&
+        (mode === 'preview' && isHtml ? (
+          <iframe className="resp-preview" sandbox="" title="preview" srcDoc={response.raw} />
         ) : (
           <pre
             className="resp-body"
             dangerouslySetInnerHTML={{ __html: bodyHtml || '<span class="j-null">(rỗng)</span>' }}
           />
-        )
-      ) : (
+        ))}
+
+      {tab === 'headers' && (
         <table className="kv-table readonly">
           <tbody>
             {headerEntries.map(([k, v]) => (
@@ -196,6 +233,32 @@ export default function ResponseView({ loading, response, error }: Props) {
             ))}
           </tbody>
         </table>
+      )}
+
+      {tab === 'cookies' && (
+        <table className="kv-table readonly">
+          <tbody>
+            {cookies.map((c) => (
+              <tr key={c.name}>
+                <td className="hkey">{c.name}</td>
+                <td>{c.value}</td>
+                <td className="cookie-attrs">{c.attrs}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {tab === 'tests' && (
+        <ul className="test-results">
+          {tests?.map((t, i) => (
+            <li key={i} className={t.passed ? 'tr-pass' : 'tr-fail'}>
+              <span className="tr-icon">{t.passed ? '✓' : '✕'}</span>
+              <span className="tr-name">{t.name}</span>
+              {t.message && <span className="tr-msg">{t.message}</span>}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

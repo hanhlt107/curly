@@ -21,7 +21,12 @@ export function blankRequest(): ApiRequest {
     bodyType: 'none',
     body: '',
     auth: emptyAuth(),
+    tests: '',
   };
+}
+
+function normalizeRequest(r: ApiRequest): ApiRequest {
+  return { ...r, auth: { ...emptyAuth(), ...r.auth }, tests: r.tests ?? '' };
 }
 
 function newTab(name = 'Request mới', request = blankRequest()): RequestTab {
@@ -102,6 +107,12 @@ export function useStore() {
     setActiveTabId(t.id);
   }, []);
 
+  const openRequest = useCallback((request: ApiRequest, name = 'Imported') => {
+    const t = newTab(name, normalizeRequest(request));
+    setTabs((prev) => [...prev, t]);
+    setActiveTabId(t.id);
+  }, []);
+
   const openSaved = useCallback(
     (saved: SavedRequest) => {
       setTabs((prev) => {
@@ -113,7 +124,7 @@ export function useStore() {
         const t: RequestTab = {
           id: crypto.randomUUID(),
           name: saved.name,
-          request: structuredClone(saved.request),
+          request: normalizeRequest(structuredClone(saved.request)),
           savedRequestId: saved.id,
           dirty: false,
         };
@@ -240,6 +251,7 @@ export function useStore() {
     activeTabId,
     setActiveTabId,
     openTab,
+    openRequest,
     openSaved,
     closeTab,
     patchTab,

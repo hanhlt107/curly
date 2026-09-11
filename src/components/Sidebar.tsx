@@ -7,6 +7,7 @@ interface Props {
   onOpenSaved: (saved: SavedRequest) => void;
   onOpenHistory: (entry: HistoryEntry) => void;
   onAddCollection: (name: string) => void;
+  onRenameCollection: (id: string, name: string) => void;
   onDeleteCollection: (id: string) => void;
   onDeleteSaved: (collectionId: string, requestId: string) => void;
   onClearHistory: () => void;
@@ -28,18 +29,19 @@ export default function Sidebar({
   onOpenSaved,
   onOpenHistory,
   onAddCollection,
+  onRenameCollection,
   onDeleteCollection,
   onDeleteSaved,
   onClearHistory,
 }: Props) {
   const [view, setView] = useState<'collections' | 'history'>('collections');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [renamingId, setRenamingId] = useState<string | null>(null);
 
   const toggle = (id: string) => setExpanded((p) => ({ ...p, [id]: !p[id] }));
 
   const promptNew = () => {
-    const name = window.prompt('Tên collection mới:');
-    if (name !== null) onAddCollection(name);
+    onAddCollection(`Collection ${collections.length + 1}`);
   };
 
   return (
@@ -72,7 +74,34 @@ export default function Sidebar({
               <li key={c.id} className="tree-col">
                 <div className="tree-col-head" onClick={() => toggle(c.id)}>
                   <span className={`caret ${expanded[c.id] ? 'open' : ''}`}>▸</span>
-                  <span className="tree-name">{c.name}</span>
+                  {renamingId === c.id ? (
+                    <input
+                      className="tree-rename"
+                      defaultValue={c.name}
+                      autoFocus
+                      onClick={(e) => e.stopPropagation()}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        if (v) onRenameCollection(c.id, v);
+                        setRenamingId(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                        if (e.key === 'Escape') setRenamingId(null);
+                      }}
+                    />
+                  ) : (
+                    <span
+                      className="tree-name"
+                      title="Nhấn đúp để đổi tên"
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        setRenamingId(c.id);
+                      }}
+                    >
+                      {c.name}
+                    </span>
+                  )}
                   <span className="tree-count">{c.requests.length}</span>
                   <button
                     className="row-del"
