@@ -9,6 +9,31 @@ export interface KeyValue {
 
 export type BodyType = 'none' | 'json' | 'raw';
 
+export type AuthType = 'none' | 'bearer' | 'basic' | 'apikey';
+export type ApiKeyIn = 'header' | 'query';
+
+export interface Auth {
+  type: AuthType;
+  bearerToken: string;
+  basicUser: string;
+  basicPass: string;
+  apiKeyName: string;
+  apiKeyValue: string;
+  apiKeyIn: ApiKeyIn;
+}
+
+export function emptyAuth(): Auth {
+  return {
+    type: 'none',
+    bearerToken: '',
+    basicUser: '',
+    basicPass: '',
+    apiKeyName: '',
+    apiKeyValue: '',
+    apiKeyIn: 'header',
+  };
+}
+
 export interface ApiRequest {
   method: HttpMethod;
   url: string;
@@ -16,6 +41,7 @@ export interface ApiRequest {
   headers: KeyValue[];
   bodyType: BodyType;
   body: string;
+  auth: Auth;
 }
 
 export interface ApiResponse {
@@ -25,11 +51,40 @@ export interface ApiResponse {
   sizeBytes: number;
   headers: Record<string, string>;
   data: unknown;
+  raw: string;
 }
 
 export interface RequestError {
   message: string;
   detail?: string;
+}
+
+/** Một request đã lưu trong collection. */
+export interface SavedRequest {
+  id: string;
+  name: string;
+  request: ApiRequest;
+}
+
+export interface Collection {
+  id: string;
+  name: string;
+  requests: SavedRequest[];
+}
+
+/** Một tab đang mở trong workspace. */
+export interface RequestTab {
+  id: string;
+  name: string;
+  request: ApiRequest;
+  savedRequestId?: string;
+  dirty: boolean;
+}
+
+export interface Environment {
+  id: string;
+  name: string;
+  variables: KeyValue[];
 }
 
 export interface HistoryEntry {
