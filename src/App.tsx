@@ -15,6 +15,12 @@ import { toCurl } from './config/curl';
 import RunnerModal from './components/RunnerModal';
 import SaveModal from './components/SaveModal';
 import { envToRecord, resolveVars, sendRequest } from './config/apiClient';
+import {
+  POST_SCRIPT_PLACEHOLDER,
+  SCRIPT_PLACEHOLDER,
+  runPostScript,
+  runPreScript,
+} from './config/script';
 import { useStore } from './hooks/useStore';
 import type {
   ApiResponse,
@@ -25,7 +31,7 @@ import type {
 } from './types/request';
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
-type ReqTab = 'params' | 'auth' | 'headers' | 'body' | 'tests';
+type ReqTab = 'params' | 'auth' | 'headers' | 'body' | 'tests' | 'script';
 
 export default function App() {
   const store = useStore();
@@ -36,20 +42,47 @@ export default function App() {
   const [runnerId, setRunnerId] = useState<string | null>(null);
   const [showCurl, setShowCurl] = useState(false);
   const [shared, setShared] = useState(false);
+  const [theme, setTheme] = useState<'dark' | 'light'>(
+    () => (localStorage.getItem('curly:theme') as 'dark' | 'light') || 'dark',
+  );
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [respByTab, setRespByTab] = useState<
-    Record<
-      string,
-      {
-        loading: boolean;
-        response: ApiResponse | null;
-        prevResponse?: ApiResponse | null;
-        error: RequestError | null;
-        tests?: TestResult[];
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('curly:theme', theme);
+  }, [theme]);
+
+  type RespState = {
+    loading: boolean;
+    response: ApiResponse | null;
+    prevResponse?: ApiResponse | null;
+    error: RequestError | null;
+    tests?: TestResult[];
+    logs?: string[];
+  };
+  const RESP_KEY = 'curly:responses:v1';
+  const [respByTab, setRespByTab] = useState<Record<string, RespState>>(() => {
+    try {
+      const raw = localStorage.getItem(RESP_KEY);
+      return raw ? (JSON.parse(raw) as Record<string, RespState>) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    const persistable: Record<string, RespState> = {};
+    for (const [id, s] of Object.entries(respByTab)) {
+      if (s.response || s.error) {
+        persistable[id] = { ...s, loading: false };
       }
-    >
-  >({});
+    }
+    try {
+      localStorage.setItem(RESP_KEY, JSON.stringify(persistable));
+    } catch {
+      /* quota exceeded — bỏ qua */
+    }
+  }, [respByTab]);
 
   const tab = store.activeTab;
   const req = tab.request;
@@ -75,14 +108,44 @@ export default function App() {
       return;
     }
     const prevResponse = respByTab[tab.id]?.response ?? null;
-    setState(tab.id, { loading: true, error: null, response: null, tests: undefined });
+    setState(tab.id, { loading: true, error: null, response: null, tests: undefined, logs: undefined });
+
+    let workVars = { ...vars };
+    const logs: string[] = [];
+    if (req.preScript.trim()) {
+      const pre = runPreScript(req.preScript, workVars);
+      workVars = pre.vars;
+      logs.push(...pre.logs);
+      if (pre.error) {
+        setState(tab.id, {
+          loading: false,
+          error: { message: 'Lỗi pre-request script', detail: pre.error },
+          logs,
+        });
+        return;
+      }
+    }
+
     try {
-      const res = await sendRequest(req, vars);
+      const res = await sendRequest(req, workVars);
+      if (req.postScript.trim()) {
+        const post = runPostScript(req.postScript, workVars, res);
+        workVars = post.vars;
+        logs.push(...post.logs);
+        if (post.error) logs.push('⚠ post-script: ' + post.error);
+      }
+      store.applyVars(workVars);
       const tests = req.tests.trim() ? runTests(req.tests, res) : undefined;
-      setState(tab.id, { loading: false, response: res, prevResponse, tests });
+      setState(tab.id, {
+        loading: false,
+        response: res,
+        prevResponse,
+        tests,
+        logs: logs.length ? logs : undefined,
+      });
       store.addHistory(req, res.status);
     } catch (err) {
-      setState(tab.id, { loading: false, error: err as RequestError });
+      setState(tab.id, { loading: false, error: err as RequestError, logs: logs.length ? logs : undefined });
       store.addHistory(req);
     }
   };
@@ -200,6 +263,13 @@ export default function App() {
           <button className="ghost-btn sm" onClick={() => setPaletteOpen(true)} title="Ctrl/⌘ + K">
             <span className="kbd">⌘K</span> Tìm nhanh
           </button>
+          <button
+            className="ghost-btn sm"
+            onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+            title={theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
+          >
+            {theme === 'dark' ? '☀' : '☾'}
+          </button>
           <button className="ghost-btn sm" onClick={exportWorkspace} title="Export ra file JSON">
             ↥ Export
           </button>
@@ -246,7 +316,13 @@ export default function App() {
             tabs={store.tabs}
             activeTabId={store.activeTabId}
             onSelect={store.setActiveTabId}
-            onClose={store.closeTab}
+            onClose={(id) => {
+              store.closeTab(id);
+              setRespByTab((prev) => {
+                const { [id]: _removed, ...rest } = prev;
+                return rest;
+              });
+            }}
             onNew={() => store.openTab()}
           />
 
@@ -324,6 +400,12 @@ export default function App() {
             </button>
             <button className={reqTab === 'tests' ? 'active' : ''} onClick={() => setReqTab('tests')}>
               Tests{req.tests.trim() ? <span className="pill dot-pill">●</span> : null}
+            </button>
+            <button className={reqTab === 'script' ? 'active' : ''} onClick={() => setReqTab('script')}>
+              Script
+              {req.preScript.trim() || req.postScript.trim() ? (
+                <span className="pill dot-pill">●</span>
+              ) : null}
             </button>
           </div>
 
@@ -425,14 +507,41 @@ export default function App() {
               <div className="tests-panel">
                 <div className="tests-hint">
                   Mỗi dòng một assertion. Cú pháp: <code>status === 200</code>,{' '}
-                  <code>time &lt; 2000</code>, <code>body contains "id"</code>,{' '}
-                  <code>json data.id === 1</code>
+                  <code>status &lt; 400</code>, <code>time &lt; 2000</code>,{' '}
+                  <code>body contains "id"</code>, <code>body matches /regex/</code>,{' '}
+                  <code>header content-type contains json</code>, <code>json data.id === 1</code>,{' '}
+                  <code>json data.count &gt; 0</code>
                 </div>
                 <textarea
                   className="body-input tests-input"
                   value={req.tests}
                   placeholder={TEST_PLACEHOLDER}
                   onChange={(e) => store.updateActiveRequest({ tests: e.target.value })}
+                  spellCheck={false}
+                />
+              </div>
+            )}
+            {reqTab === 'script' && (
+              <div className="script-panel">
+                {!store.activeEnv && (
+                  <div className="tests-hint">
+                    Chưa chọn Environment — biến <code>curly.set(...)</code> sẽ không được lưu.
+                  </div>
+                )}
+                <label className="field-label">Pre-request (chạy trước khi gửi)</label>
+                <textarea
+                  className="body-input script-input"
+                  value={req.preScript}
+                  placeholder={SCRIPT_PLACEHOLDER}
+                  onChange={(e) => store.updateActiveRequest({ preScript: e.target.value })}
+                  spellCheck={false}
+                />
+                <label className="field-label">Post-response (chạy sau khi nhận)</label>
+                <textarea
+                  className="body-input script-input"
+                  value={req.postScript}
+                  placeholder={POST_SCRIPT_PLACEHOLDER}
+                  onChange={(e) => store.updateActiveRequest({ postScript: e.target.value })}
                   spellCheck={false}
                 />
               </div>
@@ -445,6 +554,7 @@ export default function App() {
             prevResponse={state.prevResponse ?? null}
             error={state.error}
             tests={state.tests}
+            logs={state.logs}
           />
         </main>
       </div>
@@ -475,7 +585,12 @@ export default function App() {
         (() => {
           const col = store.collections.find((c) => c.id === runnerId);
           return col ? (
-            <RunnerModal collection={col} vars={vars} onClose={() => setRunnerId(null)} />
+            <RunnerModal
+              collection={col}
+              vars={vars}
+              onApplyVars={store.applyVars}
+              onClose={() => setRunnerId(null)}
+            />
           ) : null;
         })()}
     </div>

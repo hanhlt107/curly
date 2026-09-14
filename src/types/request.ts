@@ -45,6 +45,8 @@ export interface ApiRequest {
   graphqlVars: string;
   auth: Auth;
   tests: string;
+  preScript: string;
+  postScript: string;
 }
 
 export interface ApiResponse {

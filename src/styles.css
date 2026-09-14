@@ -21,6 +21,21 @@
   --shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.6);
 }
 
+:root[data-theme='light'] {
+  --bg: #f5f6fb;
+  --bg-grad: radial-gradient(1200px 600px at 15% -10%, #ffe8e0 0%, transparent 60%),
+    radial-gradient(1000px 500px at 110% 10%, #ffe0ef 0%, transparent 55%), #f5f6fb;
+  --panel: #ffffff;
+  --panel-2: #f1f2f9;
+  --panel-3: #e6e8f3;
+  --border: #d6d9ea;
+  --border-soft: #d6d9ea40;
+  --text: #1a1c2e;
+  --muted: #5f658a;
+  --faint: #9096bb;
+  --shadow: 0 10px 40px -12px rgba(30, 33, 60, 0.22);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -530,9 +545,102 @@ select:focus {
 }
 
 .method-caret {
-  font-size: 11px;
-  color: var(--faint);
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text);
   transition: transform 0.18s ease;
+}
+
+.runner-config {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px 0;
+  font-size: 13px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+
+.runner-config label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.runner-config input {
+  width: 68px;
+  padding: 5px 8px;
+}
+
+.runner-check {
+  gap: 6px;
+  cursor: pointer;
+}
+
+.runner-check input {
+  width: auto;
+}
+
+.runner-data {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.data-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.data-clear {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.data-clear:hover {
+  color: var(--err);
+}
+
+.data-err {
+  color: var(--err);
+  font-size: 12px;
+}
+
+.script-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+
+.script-input {
+  min-height: 120px;
+  font-family: 'SF Mono', 'Consolas', monospace;
+  font-size: 12.5px;
+}
+
+.script-logs {
+  margin: 0;
+  padding: 12px 16px;
+  list-style: none;
+  font-family: 'SF Mono', 'Consolas', monospace;
+  font-size: 12.5px;
+  color: var(--text);
+  overflow: auto;
+}
+
+.script-logs li {
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border-soft);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .method-select.open .method-caret {

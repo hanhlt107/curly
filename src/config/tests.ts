@@ -26,9 +26,35 @@ function getPath(data: unknown, path: string): unknown {
   return cur;
 }
 
+function cmp(a: number, op: string, b: number): boolean {
+  switch (op) {
+    case '>':
+      return a > b;
+    case '<':
+      return a < b;
+    case '>=':
+      return a >= b;
+    case '<=':
+      return a <= b;
+    default:
+      return a === b;
+  }
+}
+
 function evalLine(line: string, res: ApiResponse): TestResult | null {
   const trimmed = line.trim();
   if (!trimmed || trimmed.startsWith('#')) return null;
+
+  const statusCmp = trimmed.match(/^status\s*(>=|<=|>|<)\s*(\d+)$/i);
+  if (statusCmp) {
+    const limit = Number(statusCmp[2]);
+    const ok = cmp(res.status, statusCmp[1], limit);
+    return {
+      name: `status ${statusCmp[1]} ${limit}`,
+      passed: ok,
+      message: ok ? undefined : `nhận ${res.status}`,
+    };
+  }
 
   const statusEq = trimmed.match(/^status\s*(===?|!=)\s*(\d+)$/i);
   if (statusEq) {
@@ -49,6 +75,48 @@ function evalLine(line: string, res: ApiResponse): TestResult | null {
     return { name: `body chứa "${needle}"`, passed: ok, message: ok ? undefined : 'không tìm thấy' };
   }
 
+  const bodyMatch = trimmed.match(/^body\s+matches\s+\/(.+)\/([a-z]*)$/i);
+  if (bodyMatch) {
+    let ok = false;
+    let msg: string | undefined = 'không khớp';
+    try {
+      ok = new RegExp(bodyMatch[1], bodyMatch[2]).test(res.raw);
+    } catch {
+      msg = 'regex không hợp lệ';
+    }
+    return { name: `body khớp /${bodyMatch[1]}/`, passed: ok, message: ok ? undefined : msg };
+  }
+
+  const header = trimmed.match(/^header\s+([\w-]+)\s*(===?|!=|contains)\s*(.+)$/i);
+  if (header) {
+    const actual = res.headers[header[1].toLowerCase()] ?? '';
+    const expected = header[3].trim().replace(/^["']|["']$/g, '');
+    const op = header[2].toLowerCase();
+    const ok =
+      op === 'contains'
+        ? actual.toLowerCase().includes(expected.toLowerCase())
+        : op === '!='
+          ? actual !== expected
+          : actual === expected;
+    return {
+      name: `header ${header[1]} ${op} ${expected}`,
+      passed: ok,
+      message: ok ? undefined : `nhận "${actual}"`,
+    };
+  }
+
+  const jsonCmp = trimmed.match(/^json\s+([\w.[\]]+)\s*(>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)$/i);
+  if (jsonCmp) {
+    const actual = getPath(res.data, jsonCmp[1]);
+    const num = Number(actual);
+    const ok = !Number.isNaN(num) && cmp(num, jsonCmp[2], Number(jsonCmp[3]));
+    return {
+      name: `json ${jsonCmp[1]} ${jsonCmp[2]} ${jsonCmp[3]}`,
+      passed: ok,
+      message: ok ? undefined : `nhận ${JSON.stringify(actual)}`,
+    };
+  }
+
   const jsonEq = trimmed.match(/^json\s+([\w.[\]]+)\s*(===?|!=)\s*(.+)$/i);
   if (jsonEq) {
     const actual = getPath(res.data, jsonEq[1]);
@@ -66,12 +134,12 @@ function evalLine(line: string, res: ApiResponse): TestResult | null {
     };
   }
 
-  const timeLt = trimmed.match(/^time\s*<\s*(\d+)$/i);
-  if (timeLt) {
-    const limit = Number(timeLt[1]);
-    const ok = res.durationMs < limit;
+  const timeCmp = trimmed.match(/^time\s*(>=|<=|>|<)\s*(\d+)$/i);
+  if (timeCmp) {
+    const limit = Number(timeCmp[2]);
+    const ok = cmp(res.durationMs, timeCmp[1], limit);
     return {
-      name: `time < ${limit}ms`,
+      name: `time ${timeCmp[1]} ${limit}ms`,
       passed: ok,
       message: ok ? undefined : `mất ${res.durationMs}ms`,
     };
@@ -88,6 +156,10 @@ export function runTests(script: string, res: ApiResponse): TestResult[] {
 }
 
 export const TEST_PLACEHOLDER = `status === 200
+status < 400
 time < 2000
 body contains "id"
-json data.id === 1`;
+body matches /"id":\\s*\\d+/
+header content-type contains json
+json data.id === 1
+json data.count > 0`;

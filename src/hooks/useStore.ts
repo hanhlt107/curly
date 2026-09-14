@@ -24,6 +24,8 @@ export function blankRequest(): ApiRequest {
     graphqlVars: '',
     auth: emptyAuth(),
     tests: '',
+    preScript: '',
+    postScript: '',
   };
 }
 
@@ -35,6 +37,8 @@ function normalizeRequest(r: ApiRequest): ApiRequest {
     graphqlVars: r.graphqlVars ?? '',
     auth: { ...emptyAuth(), ...r.auth },
     tests: r.tests ?? '',
+    preScript: r.preScript ?? '',
+    postScript: r.postScript ?? '',
   };
 }
 
@@ -47,6 +51,8 @@ interface PersistState {
   environments: Environment[];
   activeEnvId: string | null;
   history: HistoryEntry[];
+  tabs: RequestTab[];
+  activeTabId: string;
 }
 
 function loadPersist(): PersistState {
@@ -54,17 +60,33 @@ function loadPersist(): PersistState {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const p = JSON.parse(raw);
+      const tabs: RequestTab[] = Array.isArray(p.tabs) && p.tabs.length
+        ? p.tabs.map((t: RequestTab) => ({ ...t, request: normalizeRequest(t.request) }))
+        : [newTab()];
+      const activeTabId = tabs.some((t) => t.id === p.activeTabId)
+        ? p.activeTabId
+        : tabs[0].id;
       return {
         collections: p.collections ?? [],
         environments: p.environments ?? [],
         activeEnvId: p.activeEnvId ?? null,
         history: p.history ?? [],
+        tabs,
+        activeTabId,
       };
     }
   } catch {
     /* ignore */
   }
-  return { collections: [], environments: [], activeEnvId: null, history: [] };
+  const first = newTab();
+  return {
+    collections: [],
+    environments: [],
+    activeEnvId: null,
+    history: [],
+    tabs: [first],
+    activeTabId: first.id,
+  };
 }
 
 const MAX_HISTORY = 50;
@@ -76,19 +98,20 @@ export function useStore() {
   const [activeEnvId, setActiveEnvId] = useState<string | null>(initial.current.activeEnvId);
   const [history, setHistory] = useState<HistoryEntry[]>(initial.current.history);
 
-  const [tabs, setTabs] = useState<RequestTab[]>([newTab()]);
-  const [activeTabId, setActiveTabId] = useState<string>(() => '');
-
-  // đặt tab đầu làm active sau khi mount
-  useEffect(() => {
-    setActiveTabId((prev) => prev || tabs[0]?.id || '');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const [tabs, setTabs] = useState<RequestTab[]>(initial.current.tabs);
+  const [activeTabId, setActiveTabId] = useState<string>(initial.current.activeTabId);
 
   useEffect(() => {
-    const state: PersistState = { collections, environments, activeEnvId, history };
+    const state: PersistState = {
+      collections,
+      environments,
+      activeEnvId,
+      history,
+      tabs,
+      activeTabId,
+    };
     localStorage.setItem(KEY, JSON.stringify(state));
-  }, [collections, environments, activeEnvId, history]);
+  }, [collections, environments, activeEnvId, history, tabs, activeTabId]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
 
@@ -242,6 +265,26 @@ export function useStore() {
     setActiveEnvId((cur) => (cur === id ? null : cur));
   }, []);
 
+  /** Ghi các biến (từ script) vào environment đang chọn. */
+  const applyVars = useCallback(
+    (vars: Record<string, string>) => {
+      if (!activeEnvId) return;
+      setEnvironments((prev) =>
+        prev.map((e) => {
+          if (e.id !== activeEnvId) return e;
+          const next = [...e.variables];
+          for (const [key, value] of Object.entries(vars)) {
+            const idx = next.findIndex((v) => v.key.trim() === key);
+            if (idx >= 0) next[idx] = { ...next[idx], value };
+            else next.push({ id: crypto.randomUUID(), enabled: true, key, value });
+          }
+          return { ...e, variables: next };
+        }),
+      );
+    },
+    [activeEnvId],
+  );
+
   /* ---------- History ---------- */
   const addHistory = useCallback((request: ApiRequest, status?: number) => {
     const entry: HistoryEntry = {
@@ -287,6 +330,7 @@ export function useStore() {
     addEnvironment,
     updateEnvironment,
     deleteEnvironment,
+    applyVars,
     // history
     history,
     addHistory,

@@ -35,6 +35,8 @@ function normalizeRequest(r: Partial<ApiRequest>): ApiRequest {
     graphqlVars: r.graphqlVars ?? '',
     auth: { ...emptyAuth(), ...r.auth },
     tests: r.tests ?? '',
+    preScript: r.preScript ?? '',
+    postScript: r.postScript ?? '',
   };
 }
 

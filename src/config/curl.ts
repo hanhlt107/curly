@@ -157,6 +157,8 @@ export function parseCurl(input: string): ApiRequest {
     graphqlVars: '',
     auth,
     tests: '',
+    preScript: '',
+    postScript: '',
   };
 }
 

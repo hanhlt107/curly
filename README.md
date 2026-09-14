@@ -15,9 +15,16 @@ Công cụ kiểm thử REST API chạy trực tiếp trên trình duyệt, khô
 - So sánh response giữa các lần gọi
 - Quản lý request theo Collection và chạy toàn bộ collection
 - Biến môi trường với cú pháp `{{variable}}` dùng trong URL, header, body
-- Viết test kiểm tra response (ví dụ: `status === 200`, `time < 2000`)
-- Command palette tìm kiếm nhanh (`Ctrl/⌘ + K`)
+- Pre-request / post-response script để lấy token động, truyền biến giữa các request
+- Command palette tìm kiếm nhanh (`Ctrl/⌘ + K`), giao diện sáng/tối
 - Import từ Postman và cURL, export workspace, chia sẻ request qua link
+
+## Autotest
+
+- Viết assertion cho response: `status === 200`, `time < 2000`, `body contains "..."`, `body matches /regex/`, `header ... contains ...`, `json data.id === 1`, `json data.count > 0`
+- Collection Runner: chạy toàn bộ collection, tự chuyền biến giữa các request
+- Chạy lặp nhiều vòng, đặt delay, hoặc data-driven theo file CSV/JSON
+- Tùy chọn dừng khi gặp lỗi, xuất báo cáo kết quả ra JSON
 
 ## Công nghệ
 

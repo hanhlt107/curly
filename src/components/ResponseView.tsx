@@ -9,10 +9,11 @@ interface Props {
   prevResponse?: ApiResponse | null;
   error: RequestError | null;
   tests?: TestResult[];
+  logs?: string[];
 }
 
 type BodyMode = 'pretty' | 'raw' | 'preview';
-type Tab = 'body' | 'headers' | 'cookies' | 'tests' | 'diff';
+type Tab = 'body' | 'headers' | 'cookies' | 'tests' | 'diff' | 'console';
 
 function parseCookies(headers: Record<string, string>): { name: string; value: string; attrs: string }[] {
   const raw = headers['set-cookie'];
@@ -84,7 +85,7 @@ function highlightSearch(html: string, term: string): string {
   return html.replace(new RegExp(`(${safe})`, 'gi'), '<mark>$1</mark>');
 }
 
-export default function ResponseView({ loading, response, prevResponse, error, tests }: Props) {
+export default function ResponseView({ loading, response, prevResponse, error, tests, logs }: Props) {
   const [tab, setTab] = useState<Tab>('body');
   const [mode, setMode] = useState<BodyMode>('pretty');
   const [search, setSearch] = useState('');
@@ -120,6 +121,13 @@ export default function ResponseView({ loading, response, prevResponse, error, t
       <div className="resp-state error">
         <strong>{error.message}</strong>
         {error.detail && <p>{error.detail}</p>}
+        {!!logs?.length && (
+          <ul className="script-logs">
+            {logs.map((line, i) => (
+              <li key={i}>{line}</li>
+            ))}
+          </ul>
+        )}
       </div>
     );
   }
@@ -191,6 +199,11 @@ export default function ResponseView({ loading, response, prevResponse, error, t
           {hasDiff && (
             <button className={tab === 'diff' ? 'active' : ''} onClick={() => setTab('diff')}>
               Diff <span className="pill pill-diff">⇄</span>
+            </button>
+          )}
+          {!!logs?.length && (
+            <button className={tab === 'console' ? 'active' : ''} onClick={() => setTab('console')}>
+              Console <span className="pill">{logs.length}</span>
             </button>
           )}
         </div>
@@ -271,6 +284,14 @@ export default function ResponseView({ loading, response, prevResponse, error, t
               <span className="tr-name">{t.name}</span>
               {t.message && <span className="tr-msg">{t.message}</span>}
             </li>
+          ))}
+        </ul>
+      )}
+
+      {tab === 'console' && (
+        <ul className="script-logs">
+          {logs?.map((line, i) => (
+            <li key={i}>{line}</li>
           ))}
         </ul>
       )}

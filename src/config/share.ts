@@ -12,6 +12,8 @@ interface SharePayload {
   fd?: [string, string][];
   a?: ApiRequest['auth'];
   t?: string;
+  pre?: string;
+  post?: string;
 }
 
 function toBase64Url(str: string): string {
@@ -53,6 +55,8 @@ export function encodeRequest(req: ApiRequest): string {
   if (fd.length) payload.fd = fd;
   if (req.auth.type !== 'none') payload.a = req.auth;
   if (req.tests.trim()) payload.t = req.tests;
+  if (req.preScript.trim()) payload.pre = req.preScript;
+  if (req.postScript.trim()) payload.post = req.postScript;
   return toBase64Url(JSON.stringify(payload));
 }
 
@@ -69,6 +73,8 @@ export function decodeRequest(encoded: string): ApiRequest {
     graphqlVars: payload.gv ?? '',
     auth: { ...emptyAuth(), ...payload.a },
     tests: payload.t ?? '',
+    preScript: payload.pre ?? '',
+    postScript: payload.post ?? '',
   };
 }
 
