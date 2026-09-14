@@ -1,48 +1,56 @@
-# curly 〜
+# curly
 
-> Một **Postman clone** gọn nhẹ chạy thẳng trên trình duyệt. Nhập URL, chọn method, bấm **Send** — xem status, thời gian, body JSON. Tên lấy cảm hứng từ `curl`.
+Công cụ kiểm thử REST API chạy trực tiếp trên trình duyệt, không yêu cầu cài đặt hay tài khoản. Toàn bộ dữ liệu được lưu cục bộ trong trình duyệt.
 
-**Stack:** React + Vite + TypeScript + axios. Không backend, không đăng nhập — mở là dùng.
+**Demo:** https://hanhlt107.github.io/curly/
+
+![Giao diện curly](docs/screenshot.png)
 
 ## Tính năng
 
-- Method GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS + ô URL (Enter để Send)
-- Tab **Params** (query string), **Headers**, **Body** (none / JSON / raw) — tự thêm dòng mới khi gõ
-- **Response**: status có màu, thời gian (ms), size, body JSON format đẹp, tab response headers
-- **Lịch sử** request lưu trong `localStorage`, bấm để nạp lại
+- Hỗ trợ đầy đủ HTTP method: GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS
+- Cấu hình Query Params, Headers và Authorization (Bearer, Basic, API key)
+- Nhiều định dạng body: JSON, Raw, GraphQL, Form-data, URL-encoded
+- Hiển thị response chi tiết: status, thời gian phản hồi, dung lượng, headers, body được format
+- So sánh response giữa các lần gọi
+- Quản lý request theo Collection và chạy toàn bộ collection
+- Biến môi trường với cú pháp `{{variable}}` dùng trong URL, header, body
+- Viết test kiểm tra response (ví dụ: `status === 200`, `time < 2000`)
+- Command palette tìm kiếm nhanh (`Ctrl/⌘ + K`)
+- Import từ Postman và cURL, export workspace, chia sẻ request qua link
 
-## Chạy nhanh
+## Công nghệ
+
+React, Vite, TypeScript, axios.
+
+## Cài đặt và chạy
+
+Yêu cầu Node.js 18 trở lên.
 
 ```bash
 npm install
-npm run dev      # http://localhost:5200
+npm run dev
 ```
 
-Lệnh khác:
+Ứng dụng chạy tại http://localhost:5200.
+
+Các lệnh khác:
 
 ```bash
-npm run build      # build production -> dist/
-npm run preview    # xem thử bản build
-npm run typecheck  # kiểm tra type
+npm run build      # Build bản production vào thư mục dist/
+npm run preview    # Xem thử bản build
+npm run typecheck  # Kiểm tra kiểu dữ liệu
 ```
 
-## Cấu trúc
+## Triển khai
 
-```
-src/
-  config/apiClient.ts   # axios instance + build request (params/headers/body), đo thời gian & size
-  components/
-    KeyValueEditor.tsx  # bảng key-value dùng cho Params & Headers
-    ResponseView.tsx    # hiển thị status / body / headers
-    HistoryPanel.tsx    # lịch sử request
-  hooks/useHistory.ts   # lưu lịch sử vào localStorage
-  types/request.ts      # kiểu dữ liệu
-  App.tsx               # ghép mọi thứ
-```
+Dự án được cấu hình sẵn để triển khai lên GitHub Pages qua GitHub Actions. Sau khi fork, vào **Settings → Pages** và chọn **Source: GitHub Actions**. Mỗi lần push lên nhánh `main`, ứng dụng sẽ được build và cập nhật tự động.
+
+Khi triển khai lên gốc domain (Vercel, Netlify, v.v.), hãy xóa dòng `base: '/curly/'` trong `vite.config.ts`.
 
 ## Lưu ý về CORS
 
-`curly` chạy trong trình duyệt nên chịu ràng buộc **CORS**: nếu API đích không trả header `Access-Control-Allow-Origin` phù hợp, request sẽ báo lỗi network. Đây là hành vi của trình duyệt — Postman *desktop* không gặp vì nó không phải trình duyệt. Khi cần test những API như vậy, thêm một dev proxy vào `vite.config.ts`:
+curly chạy trong trình duyệt nên tuân theo chính sách CORS. Nếu API đích không trả về header `Access-Control-Allow-Origin` phù hợp, request sẽ bị trình duyệt chặn. Trong trường hợp này, cấu hình proxy trong `vite.config.ts`:
 
 ```ts
 server: {
@@ -52,11 +60,7 @@ server: {
 }
 ```
 
-rồi gọi qua `/api/...`.
-
-## Fork & tự chỉnh
-
-Đây là dự án nhỏ, dễ đọc — hợp để fork và mở rộng. Vài hướng gợi ý: lưu **collection** nhiều request, tab **Authorization** (Bearer/Basic), **export cURL**, hoặc dark/light theme.
+sau đó gọi qua đường dẫn `/api/...`.
 
 ## License
 
