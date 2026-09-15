@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://hanhlt107.github.io/curly/sitemap.xml
