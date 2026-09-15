@@ -47,6 +47,26 @@ export interface ApiRequest {
   tests: string;
   preScript: string;
   postScript: string;
+  autoToken: boolean;
+}
+
+export function blankRequest(): ApiRequest {
+  const row = (): KeyValue => ({ id: crypto.randomUUID(), enabled: true, key: '', value: '' });
+  return {
+    method: 'GET',
+    url: '',
+    params: [row()],
+    headers: [row()],
+    bodyType: 'none',
+    body: '',
+    formData: [row()],
+    graphqlVars: '',
+    auth: emptyAuth(),
+    tests: '',
+    preScript: '',
+    postScript: '',
+    autoToken: true,
+  };
 }
 
 export interface ApiResponse {

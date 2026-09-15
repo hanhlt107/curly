@@ -64,7 +64,6 @@ function runScript(
   };
 
   try {
-    // eslint-disable-next-line no-new-func
     const fn = new Function('curly', 'console', code);
     fn(api, console);
     return { vars: out, logs };
@@ -83,4 +82,67 @@ export function runPostScript(
   response: ApiResponse,
 ): ScriptResult {
   return runScript(code, vars, response);
+}
+
+export const TOKEN_VAR = 'token';
+
+const TOKEN_KEYS = [
+  'access_token',
+  'accessToken',
+  'token',
+  'idToken',
+  'id_token',
+  'jwt',
+  'authToken',
+];
+
+function parsedBody(response: ApiResponse): unknown {
+  let body: unknown = response.data;
+  if (typeof body === 'string') {
+    try {
+      body = JSON.parse(body);
+    } catch {
+      return response.data;
+    }
+  }
+  return body;
+}
+
+function findToken(node: unknown, depth = 0): string | undefined {
+  if (node == null || depth > 4) return undefined;
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const hit = findToken(item, depth + 1);
+      if (hit) return hit;
+    }
+    return undefined;
+  }
+  if (typeof node !== 'object') return undefined;
+  const obj = node as Record<string, unknown>;
+  for (const key of TOKEN_KEYS) {
+    const val = obj[key];
+    if (typeof val === 'string' && val.trim()) return val;
+  }
+  for (const val of Object.values(obj)) {
+    if (val && typeof val === 'object') {
+      const hit = findToken(val, depth + 1);
+      if (hit) return hit;
+    }
+  }
+  return undefined;
+}
+
+export function autoExtractToken(
+  vars: Record<string, string>,
+  response: ApiResponse,
+): ScriptResult {
+  const logs: string[] = [];
+  const existing = vars[TOKEN_VAR];
+  if (existing && existing.trim()) return { vars, logs };
+
+  const token = findToken(parsedBody(response));
+  if (!token) return { vars, logs };
+
+  logs.push(`⇢ ${TOKEN_VAR} = ${token.length > 60 ? token.slice(0, 60) + '…' : token}`);
+  return { vars: { ...vars, [TOKEN_VAR]: token }, logs };
 }

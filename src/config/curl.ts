@@ -159,6 +159,7 @@ export function parseCurl(input: string): ApiRequest {
     tests: '',
     preScript: '',
     postScript: '',
+    autoToken: true,
   };
 }
 
@@ -188,7 +189,10 @@ function authHeaders(req: ApiRequest): KeyValue[] {
 
 export function toCurl(req: ApiRequest): string {
   const lines: string[] = [];
-  const first = req.method !== 'GET' ? `curl -X ${req.method} ${quote(buildUrl(req))}` : `curl ${quote(buildUrl(req))}`;
+  const first =
+    req.method !== 'GET'
+      ? `curl -X ${req.method} ${quote(buildUrl(req))}`
+      : `curl ${quote(buildUrl(req))}`;
   lines.push(first);
 
   const headers = [...req.headers.filter((h) => h.enabled && h.key.trim()), ...authHeaders(req)];

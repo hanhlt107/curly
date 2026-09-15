@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import type { Collection } from '../types/request';
 import { sendRequest } from '../config/apiClient';
 import { runTests } from '../config/tests';
-import { runPostScript, runPreScript } from '../config/script';
+import { autoExtractToken, runPostScript, runPreScript } from '../config/script';
 import { parseDataset, type DataRow } from '../config/dataset';
 
 interface Props {
@@ -112,6 +112,9 @@ export default function RunnerModal({ collection, vars, onApplyVars, onClose }: 
             if (pre.error) throw new Error('pre-script: ' + pre.error);
           }
           const res = await sendRequest(r, runVars);
+          if (r.autoToken) {
+            runVars = autoExtractToken(runVars, res).vars;
+          }
           if (r.postScript.trim()) {
             const post = runPostScript(r.postScript, runVars, res);
             runVars = post.vars;

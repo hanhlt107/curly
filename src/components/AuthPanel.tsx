@@ -3,6 +3,8 @@ import type { ApiKeyIn, Auth, AuthType } from '../types/request';
 interface Props {
   auth: Auth;
   onChange: (patch: Partial<Auth>) => void;
+  autoToken: boolean;
+  onAutoTokenChange: (value: boolean) => void;
 }
 
 const TYPES: { value: AuthType; label: string }[] = [
@@ -12,9 +14,18 @@ const TYPES: { value: AuthType; label: string }[] = [
   { value: 'apikey', label: 'API Key' },
 ];
 
-export default function AuthPanel({ auth, onChange }: Props) {
+export default function AuthPanel({ auth, onChange, autoToken, onAutoTokenChange }: Props) {
   return (
     <div className="auth-panel">
+      <label className="auto-token">
+        <input
+          type="checkbox"
+          checked={autoToken}
+          onChange={(e) => onAutoTokenChange(e.target.checked)}
+        />
+        Tự lưu token từ response vào biến <code>{'{{token}}'}</code>
+      </label>
+
       <div className="auth-type">
         <label>Kiểu</label>
         <select value={auth.type} onChange={(e) => onChange({ type: e.target.value as AuthType })}>
@@ -42,10 +53,7 @@ export default function AuthPanel({ auth, onChange }: Props) {
       {auth.type === 'basic' && (
         <div className="auth-fields">
           <label>Username</label>
-          <input
-            value={auth.basicUser}
-            onChange={(e) => onChange({ basicUser: e.target.value })}
-          />
+          <input value={auth.basicUser} onChange={(e) => onChange({ basicUser: e.target.value })} />
           <label>Password</label>
           <input
             type="password"

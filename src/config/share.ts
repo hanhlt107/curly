@@ -14,6 +14,7 @@ interface SharePayload {
   t?: string;
   pre?: string;
   post?: string;
+  at?: boolean;
 }
 
 function toBase64Url(str: string): string {
@@ -28,7 +29,9 @@ function fromBase64Url(b64url: string): string {
 }
 
 function pairs(list: ApiRequest['params']): [string, string][] {
-  return list.filter((x) => x.enabled && x.key.trim()).map((x): [string, string] => [x.key, x.value]);
+  return list
+    .filter((x) => x.enabled && x.key.trim())
+    .map((x): [string, string] => [x.key, x.value]);
 }
 
 function unpairs(list?: [string, string][]): ApiRequest['params'] {
@@ -57,6 +60,7 @@ export function encodeRequest(req: ApiRequest): string {
   if (req.tests.trim()) payload.t = req.tests;
   if (req.preScript.trim()) payload.pre = req.preScript;
   if (req.postScript.trim()) payload.post = req.postScript;
+  if (!req.autoToken) payload.at = false;
   return toBase64Url(JSON.stringify(payload));
 }
 
@@ -75,6 +79,7 @@ export function decodeRequest(encoded: string): ApiRequest {
     tests: payload.t ?? '',
     preScript: payload.pre ?? '',
     postScript: payload.post ?? '',
+    autoToken: payload.at ?? true,
   };
 }
 

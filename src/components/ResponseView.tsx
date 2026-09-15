@@ -15,7 +15,9 @@ interface Props {
 type BodyMode = 'pretty' | 'raw' | 'preview';
 type Tab = 'body' | 'headers' | 'cookies' | 'tests' | 'diff' | 'console';
 
-function parseCookies(headers: Record<string, string>): { name: string; value: string; attrs: string }[] {
+function parseCookies(
+  headers: Record<string, string>,
+): { name: string; value: string; attrs: string }[] {
   const raw = headers['set-cookie'];
   if (!raw) return [];
   return raw
@@ -61,8 +63,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 
-const esc = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /** Tô màu JSON đơn giản bằng regex → HTML. */
 function highlightJson(text: string): string {
@@ -85,16 +86,20 @@ function highlightSearch(html: string, term: string): string {
   return html.replace(new RegExp(`(${safe})`, 'gi'), '<mark>$1</mark>');
 }
 
-export default function ResponseView({ loading, response, prevResponse, error, tests, logs }: Props) {
+export default function ResponseView({
+  loading,
+  response,
+  prevResponse,
+  error,
+  tests,
+  logs,
+}: Props) {
   const [tab, setTab] = useState<Tab>('body');
   const [mode, setMode] = useState<BodyMode>('pretty');
   const [search, setSearch] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const pretty = useMemo(
-    () => (response ? prettify(response.data, response.raw) : ''),
-    [response],
-  );
+  const pretty = useMemo(() => (response ? prettify(response.data, response.raw) : ''), [response]);
 
   const bodyHtml = useMemo(() => {
     if (!response) return '';
@@ -135,7 +140,7 @@ export default function ResponseView({ loading, response, prevResponse, error, t
   if (!response) {
     return (
       <div className="resp-state muted">
-        <span className="big-mark">〜</span>
+        <img className="big-mark" src={`${import.meta.env.BASE_URL}curly-mark.svg`} alt="" />
         <p>Nhập URL rồi bấm Send để xem kết quả.</p>
       </div>
     );
@@ -147,7 +152,8 @@ export default function ResponseView({ loading, response, prevResponse, error, t
   const testCount = tests?.length ?? 0;
   const testPass = tests?.filter((t) => t.passed).length ?? 0;
   const diffChanges = diffSummary(diffRows);
-  const hasDiff = !!prevResponse && diffChanges.added + diffChanges.removed + diffChanges.changed > 0;
+  const hasDiff =
+    !!prevResponse && diffChanges.added + diffChanges.removed + diffChanges.changed > 0;
 
   const copy = () => {
     const text = mode === 'raw' ? response.raw : pretty;

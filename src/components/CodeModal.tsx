@@ -62,7 +62,9 @@ export default function CodeModal({ request, onImport, onClose }: Props) {
         <div className="modal-body">
           {mode === 'import' ? (
             <>
-              <p className="field-label">Dán lệnh cURL, Curly tự tách method, URL, headers, body…</p>
+              <p className="field-label">
+                Dán lệnh cURL, Curly tự tách method, URL, headers, body…
+              </p>
               <textarea
                 className="code-input"
                 autoFocus

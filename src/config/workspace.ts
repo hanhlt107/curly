@@ -9,7 +9,10 @@ export interface WorkspaceExport {
   environments: Environment[];
 }
 
-export function buildExport(collections: Collection[], environments: Environment[]): WorkspaceExport {
+export function buildExport(
+  collections: Collection[],
+  environments: Environment[],
+): WorkspaceExport {
   return {
     app: 'curly',
     version: 1,
@@ -37,6 +40,7 @@ function normalizeRequest(r: Partial<ApiRequest>): ApiRequest {
     tests: r.tests ?? '',
     preScript: r.preScript ?? '',
     postScript: r.postScript ?? '',
+    autoToken: r.autoToken ?? true,
   };
 }
 

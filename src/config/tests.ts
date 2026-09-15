@@ -72,7 +72,11 @@ function evalLine(line: string, res: ApiResponse): TestResult | null {
   if (contains) {
     const needle = contains[1].replace(/^["']|["']$/g, '');
     const ok = res.raw.includes(needle);
-    return { name: `body chứa "${needle}"`, passed: ok, message: ok ? undefined : 'không tìm thấy' };
+    return {
+      name: `body chứa "${needle}"`,
+      passed: ok,
+      message: ok ? undefined : 'không tìm thấy',
+    };
   }
 
   const bodyMatch = trimmed.match(/^body\s+matches\s+\/(.+)\/([a-z]*)$/i);

@@ -14,27 +14,34 @@ import { buildShareLink, readSharedRequest } from './config/share';
 import { toCurl } from './config/curl';
 import RunnerModal from './components/RunnerModal';
 import SaveModal from './components/SaveModal';
+import AuthModal from './components/AuthModal';
+import { useAuth } from './hooks/useAuth';
+import { useCloudSync } from './hooks/useCloudSync';
 import { envToRecord, resolveVars, sendRequest } from './config/apiClient';
 import {
   POST_SCRIPT_PLACEHOLDER,
   SCRIPT_PLACEHOLDER,
+  autoExtractToken,
   runPostScript,
   runPreScript,
 } from './config/script';
 import { useStore } from './hooks/useStore';
-import type {
-  ApiResponse,
-  Auth,
-  BodyType,
-  HttpMethod,
-  RequestError,
-} from './types/request';
+import type { ApiResponse, Auth, BodyType, HttpMethod, RequestError } from './types/request';
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 type ReqTab = 'params' | 'auth' | 'headers' | 'body' | 'tests' | 'script';
 
 export default function App() {
   const store = useStore();
+  const auth = useAuth();
+  const sync = useCloudSync({
+    userId: auth.user?.id ?? null,
+    collections: store.collections,
+    environments: store.environments,
+    onPull: store.replaceWorkspace,
+  });
+  const [authOpen, setAuthOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [reqTab, setReqTab] = useState<ReqTab>('params');
   const [saveOpen, setSaveOpen] = useState(false);
   const [codeOpen, setCodeOpen] = useState(false);
@@ -108,7 +115,13 @@ export default function App() {
       return;
     }
     const prevResponse = respByTab[tab.id]?.response ?? null;
-    setState(tab.id, { loading: true, error: null, response: null, tests: undefined, logs: undefined });
+    setState(tab.id, {
+      loading: true,
+      error: null,
+      response: null,
+      tests: undefined,
+      logs: undefined,
+    });
 
     let workVars = { ...vars };
     const logs: string[] = [];
@@ -128,6 +141,11 @@ export default function App() {
 
     try {
       const res = await sendRequest(req, workVars);
+      if (req.autoToken) {
+        const auto = autoExtractToken(workVars, res);
+        workVars = auto.vars;
+        logs.push(...auto.logs);
+      }
       if (req.postScript.trim()) {
         const post = runPostScript(req.postScript, workVars, res);
         workVars = post.vars;
@@ -145,7 +163,11 @@ export default function App() {
       });
       store.addHistory(req, res.status);
     } catch (err) {
-      setState(tab.id, { loading: false, error: err as RequestError, logs: logs.length ? logs : undefined });
+      setState(tab.id, {
+        loading: false,
+        error: err as RequestError,
+        logs: logs.length ? logs : undefined,
+      });
       store.addHistory(req);
     }
   };
@@ -180,6 +202,23 @@ export default function App() {
     setTimeout(() => setShared(false), 1600);
   };
 
+  const syncLabel = useMemo(() => {
+    switch (sync.status) {
+      case 'pulling':
+        return 'Đang tải từ cloud…';
+      case 'saving':
+        return 'Đang lưu…';
+      case 'synced':
+        return sync.lastSyncedAt
+          ? `Đã đồng bộ · ${new Date(sync.lastSyncedAt).toLocaleTimeString()}`
+          : 'Đã đồng bộ';
+      case 'error':
+        return 'Lỗi đồng bộ';
+      default:
+        return 'Chưa đồng bộ';
+    }
+  }, [sync.status, sync.lastSyncedAt]);
+
   const curlPreview = useMemo(() => toCurl(req), [req]);
 
   const copyCurl = () => {
@@ -213,10 +252,26 @@ export default function App() {
   const commands: Command[] = useMemo(() => {
     const list: Command[] = [
       { id: 'new-tab', group: 'Lệnh', label: 'Tab mới', hint: 'New', run: () => store.openTab() },
-      { id: 'save', group: 'Lệnh', label: 'Lưu request', hint: 'Save', run: () => setSaveOpen(true) },
-      { id: 'code', group: 'Lệnh', label: 'Import cURL / Code snippet', run: () => setCodeOpen(true) },
+      {
+        id: 'save',
+        group: 'Lệnh',
+        label: 'Lưu request',
+        hint: 'Save',
+        run: () => setSaveOpen(true),
+      },
+      {
+        id: 'code',
+        group: 'Lệnh',
+        label: 'Import cURL / Code snippet',
+        run: () => setCodeOpen(true),
+      },
       { id: 'export', group: 'Lệnh', label: 'Export workspace', run: exportWorkspace },
-      { id: 'import', group: 'Lệnh', label: 'Import workspace / Postman', run: () => fileRef.current?.click() },
+      {
+        id: 'import',
+        group: 'Lệnh',
+        label: 'Import workspace / Postman',
+        run: () => fileRef.current?.click(),
+      },
       {
         id: 'no-env',
         group: 'Environment',
@@ -250,7 +305,24 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <h1>curly</h1>
+        <button
+          className="sidebar-toggle"
+          onClick={() => setSidebarOpen((o) => !o)}
+          aria-label="Mở/đóng danh sách collection"
+          aria-expanded={sidebarOpen}
+        >
+          ☰
+        </button>
+        <h1>
+          <img
+            src={`${import.meta.env.BASE_URL}curly-mark.svg`}
+            alt=""
+            width={26}
+            height={26}
+            className="topbar-logo"
+          />
+          curly
+        </h1>
         <EnvironmentBar
           environments={store.environments}
           activeEnvId={store.activeEnvId}
@@ -273,7 +345,11 @@ export default function App() {
           <button className="ghost-btn sm" onClick={exportWorkspace} title="Export ra file JSON">
             ↥ Export
           </button>
-          <button className="ghost-btn sm" onClick={() => fileRef.current?.click()} title="Import Curly / Postman">
+          <button
+            className="ghost-btn sm"
+            onClick={() => fileRef.current?.click()}
+            title="Import Curly / Postman"
+          >
             ↧ Import
           </button>
           <input
@@ -287,14 +363,34 @@ export default function App() {
               e.target.value = '';
             }}
           />
+          {auth.enabled &&
+            (auth.user ? (
+              <div className="account">
+                <span className={`sync-dot ${sync.status}`} title={syncLabel} />
+                <span className="account-email" title={auth.user.email ?? undefined}>
+                  {auth.user.email}
+                </span>
+                <button className="ghost-btn sm" onClick={auth.signOut} title="Đăng xuất">
+                  Đăng xuất
+                </button>
+              </div>
+            ) : (
+              <button className="send-btn sm" onClick={() => setAuthOpen(true)}>
+                Đăng nhập
+              </button>
+            ))}
         </div>
       </header>
 
-      <div className="layout">
+      <div className={`layout ${sidebarOpen ? 'sidebar-open' : ''}`}>
+        {sidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
         <Sidebar
           collections={store.collections}
           history={store.history}
-          onOpenSaved={store.openSaved}
+          onOpenSaved={(s) => {
+            store.openSaved(s);
+            setSidebarOpen(false);
+          }}
           onOpenHistory={(h) =>
             store.openTab({
               id: crypto.randomUUID(),
@@ -349,7 +445,11 @@ export default function App() {
             <button className="send-btn" onClick={send} disabled={state.loading}>
               {state.loading ? <span className="btn-spinner" /> : 'Send'}
             </button>
-            <button className="save-btn" onClick={() => setSaveOpen(true)} title="Lưu vào collection">
+            <button
+              className="save-btn"
+              onClick={() => setSaveOpen(true)}
+              title="Lưu vào collection"
+            >
               Save
             </button>
             <button
@@ -383,7 +483,10 @@ export default function App() {
           </div>
 
           <div className="req-tabs">
-            <button className={reqTab === 'params' ? 'active' : ''} onClick={() => setReqTab('params')}>
+            <button
+              className={reqTab === 'params' ? 'active' : ''}
+              onClick={() => setReqTab('params')}
+            >
               Params{activeParams ? <span className="pill">{activeParams}</span> : null}
             </button>
             <button className={reqTab === 'auth' ? 'active' : ''} onClick={() => setReqTab('auth')}>
@@ -398,10 +501,16 @@ export default function App() {
             <button className={reqTab === 'body' ? 'active' : ''} onClick={() => setReqTab('body')}>
               Body{req.bodyType !== 'none' ? <span className="pill dot-pill">●</span> : null}
             </button>
-            <button className={reqTab === 'tests' ? 'active' : ''} onClick={() => setReqTab('tests')}>
+            <button
+              className={reqTab === 'tests' ? 'active' : ''}
+              onClick={() => setReqTab('tests')}
+            >
               Tests{req.tests.trim() ? <span className="pill dot-pill">●</span> : null}
             </button>
-            <button className={reqTab === 'script' ? 'active' : ''} onClick={() => setReqTab('script')}>
+            <button
+              className={reqTab === 'script' ? 'active' : ''}
+              onClick={() => setReqTab('script')}
+            >
               Script
               {req.preScript.trim() || req.postScript.trim() ? (
                 <span className="pill dot-pill">●</span>
@@ -423,6 +532,8 @@ export default function App() {
                 onChange={(patch: Partial<Auth>) =>
                   store.updateActiveRequest({ auth: { ...req.auth, ...patch } })
                 }
+                autoToken={req.autoToken ?? false}
+                onAutoTokenChange={(autoToken) => store.updateActiveRequest({ autoToken })}
               />
             )}
             {reqTab === 'headers' && (
@@ -577,9 +688,9 @@ export default function App() {
         />
       )}
 
-      {paletteOpen && (
-        <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />
-      )}
+      {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
+
+      {authOpen && <AuthModal auth={auth} onClose={() => setAuthOpen(false)} />}
 
       {runnerId &&
         (() => {

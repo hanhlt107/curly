@@ -61,68 +61,69 @@ export default function EnvironmentBar({
         </button>
       </div>
 
-      {open && createPortal(
-        <div className="modal-overlay" onClick={() => setOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-head">
-              <h3>Environments</h3>
-              <button className="modal-x" onClick={() => setOpen(false)}>
-                ×
-              </button>
-            </div>
-            <div className="modal-body env-modal">
-              <div className="env-list">
-                <button className="env-add" onClick={promptNew}>
-                  + Environment
+      {open &&
+        createPortal(
+          <div className="modal-overlay" onClick={() => setOpen(false)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <div className="modal-head">
+                <h3>Environments</h3>
+                <button className="modal-x" onClick={() => setOpen(false)}>
+                  ×
                 </button>
-                {environments.map((e) => (
-                  <div
-                    key={e.id}
-                    className={`env-item ${e.id === editingId ? 'active' : ''}`}
-                    onClick={() => setEditingId(e.id)}
-                  >
-                    <span>{e.name}</span>
-                    <button
-                      className="row-del"
-                      onClick={(ev) => {
-                        ev.stopPropagation();
-                        if (window.confirm(`Xóa "${e.name}"?`)) {
-                          onDelete(e.id);
-                          if (editingId === e.id) setEditingId(null);
-                        }
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
               </div>
-              <div className="env-detail">
-                {editing ? (
-                  <>
-                    <input
-                      className="env-name-input"
-                      value={editing.name}
-                      onChange={(e) => onUpdate(editing.id, { name: e.target.value })}
-                    />
-                    <p className="env-var-hint">
-                      Dùng biến trong request bằng cú pháp <code>{'{{tên}}'}</code>
-                    </p>
-                    <KeyValueEditor
-                      items={editing.variables.length ? editing.variables : [newRow()]}
-                      onChange={(variables: KeyValue[]) => onUpdate(editing.id, { variables })}
-                      keyPlaceholder="Biến"
-                    />
-                  </>
-                ) : (
-                  <p className="side-empty">Chọn hoặc tạo một environment để sửa biến.</p>
-                )}
+              <div className="modal-body env-modal">
+                <div className="env-list">
+                  <button className="env-add" onClick={promptNew}>
+                    + Environment
+                  </button>
+                  {environments.map((e) => (
+                    <div
+                      key={e.id}
+                      className={`env-item ${e.id === editingId ? 'active' : ''}`}
+                      onClick={() => setEditingId(e.id)}
+                    >
+                      <span>{e.name}</span>
+                      <button
+                        className="row-del"
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          if (window.confirm(`Xóa "${e.name}"?`)) {
+                            onDelete(e.id);
+                            if (editingId === e.id) setEditingId(null);
+                          }
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="env-detail">
+                  {editing ? (
+                    <>
+                      <input
+                        className="env-name-input"
+                        value={editing.name}
+                        onChange={(e) => onUpdate(editing.id, { name: e.target.value })}
+                      />
+                      <p className="env-var-hint">
+                        Dùng biến trong request bằng cú pháp <code>{'{{tên}}'}</code>
+                      </p>
+                      <KeyValueEditor
+                        items={editing.variables.length ? editing.variables : [newRow()]}
+                        onChange={(variables: KeyValue[]) => onUpdate(editing.id, { variables })}
+                        keyPlaceholder="Biến"
+                      />
+                    </>
+                  ) : (
+                    <p className="side-empty">Chọn hoặc tạo một environment để sửa biến.</p>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        </div>,
-        document.body,
-      )}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

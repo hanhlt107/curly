@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { seedWorkspace } from '../config/seed';
 import {
+  blankRequest,
   emptyAuth,
   type ApiRequest,
   type Collection,
@@ -9,25 +11,9 @@ import {
   type SavedRequest,
 } from '../types/request';
 
-const KEY = 'curly:state:v1';
+export { blankRequest };
 
-export function blankRequest(): ApiRequest {
-  const row = () => ({ id: crypto.randomUUID(), enabled: true, key: '', value: '' });
-  return {
-    method: 'GET',
-    url: '',
-    params: [row()],
-    headers: [row()],
-    bodyType: 'none',
-    body: '',
-    formData: [row()],
-    graphqlVars: '',
-    auth: emptyAuth(),
-    tests: '',
-    preScript: '',
-    postScript: '',
-  };
-}
+const KEY = 'curly:state:v1';
 
 function normalizeRequest(r: ApiRequest): ApiRequest {
   const row = () => ({ id: crypto.randomUUID(), enabled: true, key: '', value: '' });
@@ -39,6 +25,7 @@ function normalizeRequest(r: ApiRequest): ApiRequest {
     tests: r.tests ?? '',
     preScript: r.preScript ?? '',
     postScript: r.postScript ?? '',
+    autoToken: r.autoToken ?? true,
   };
 }
 
@@ -60,12 +47,11 @@ function loadPersist(): PersistState {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const p = JSON.parse(raw);
-      const tabs: RequestTab[] = Array.isArray(p.tabs) && p.tabs.length
-        ? p.tabs.map((t: RequestTab) => ({ ...t, request: normalizeRequest(t.request) }))
-        : [newTab()];
-      const activeTabId = tabs.some((t) => t.id === p.activeTabId)
-        ? p.activeTabId
-        : tabs[0].id;
+      const tabs: RequestTab[] =
+        Array.isArray(p.tabs) && p.tabs.length
+          ? p.tabs.map((t: RequestTab) => ({ ...t, request: normalizeRequest(t.request) }))
+          : [newTab()];
+      const activeTabId = tabs.some((t) => t.id === p.activeTabId) ? p.activeTabId : tabs[0].id;
       return {
         collections: p.collections ?? [],
         environments: p.environments ?? [],
@@ -79,10 +65,11 @@ function loadPersist(): PersistState {
     /* ignore */
   }
   const first = newTab();
+  const { collections, environments } = seedWorkspace();
   return {
-    collections: [],
-    environments: [],
-    activeEnvId: null,
+    collections,
+    environments,
+    activeEnvId: environments[0]?.id ?? null,
     history: [],
     tabs: [first],
     activeTabId: first.id,
@@ -124,9 +111,7 @@ export function useStore() {
     (patch: Partial<ApiRequest>) => {
       setTabs((prev) =>
         prev.map((t) =>
-          t.id === activeTabId
-            ? { ...t, request: { ...t.request, ...patch }, dirty: true }
-            : t,
+          t.id === activeTabId ? { ...t, request: { ...t.request, ...patch }, dirty: true } : t,
         ),
       );
     },
@@ -145,27 +130,24 @@ export function useStore() {
     setActiveTabId(t.id);
   }, []);
 
-  const openSaved = useCallback(
-    (saved: SavedRequest) => {
-      setTabs((prev) => {
-        const existing = prev.find((t) => t.savedRequestId === saved.id);
-        if (existing) {
-          setActiveTabId(existing.id);
-          return prev;
-        }
-        const t: RequestTab = {
-          id: crypto.randomUUID(),
-          name: saved.name,
-          request: normalizeRequest(structuredClone(saved.request)),
-          savedRequestId: saved.id,
-          dirty: false,
-        };
-        setActiveTabId(t.id);
-        return [...prev, t];
-      });
-    },
-    [],
-  );
+  const openSaved = useCallback((saved: SavedRequest) => {
+    setTabs((prev) => {
+      const existing = prev.find((t) => t.savedRequestId === saved.id);
+      if (existing) {
+        setActiveTabId(existing.id);
+        return prev;
+      }
+      const t: RequestTab = {
+        id: crypto.randomUUID(),
+        name: saved.name,
+        request: normalizeRequest(structuredClone(saved.request)),
+        savedRequestId: saved.id,
+        dirty: false,
+      };
+      setActiveTabId(t.id);
+      return [...prev, t];
+    });
+  }, []);
 
   const closeTab = useCallback(
     (id: string) => {
@@ -230,9 +212,7 @@ export function useStore() {
           if (existing) {
             return {
               ...c,
-              requests: c.requests.map((r) =>
-                r.id === existing.id ? { ...r, name, request } : r,
-              ),
+              requests: c.requests.map((r) => (r.id === existing.id ? { ...r, name, request } : r)),
             };
           }
           const saved: SavedRequest = { id: crypto.randomUUID(), name, request };
@@ -302,6 +282,11 @@ export function useStore() {
 
   const activeEnv = environments.find((e) => e.id === activeEnvId) ?? null;
 
+  const replaceWorkspace = useCallback((cols: Collection[], envs: Environment[]) => {
+    setCollections(cols);
+    setEnvironments(envs);
+  }, []);
+
   return {
     // tabs
     tabs,
@@ -322,6 +307,7 @@ export function useStore() {
     importWorkspace,
     deleteSaved,
     saveTabToCollection,
+    replaceWorkspace,
     // environments
     environments,
     activeEnv,

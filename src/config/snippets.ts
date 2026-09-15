@@ -74,7 +74,9 @@ function pythonSnippet(req: ApiRequest): string {
   const headers = headerPairs(req);
   const lines: string[] = ['import requests', ''];
   if (headers.length) {
-    const hs = headers.map(([k, v]) => `    ${JSON.stringify(k)}: ${JSON.stringify(v)}`).join(',\n');
+    const hs = headers
+      .map(([k, v]) => `    ${JSON.stringify(k)}: ${JSON.stringify(v)}`)
+      .join(',\n');
     lines.push(`headers = {\n${hs}\n}`);
   }
   const args = [`    ${JSON.stringify(fullUrl(req))}`];
@@ -91,9 +93,7 @@ function pythonSnippet(req: ApiRequest): string {
 
 function goSnippet(req: ApiRequest): string {
   const headers = headerPairs(req);
-  const bodyExpr = hasBody(req)
-    ? `strings.NewReader(${JSON.stringify(req.body)})`
-    : 'nil';
+  const bodyExpr = hasBody(req) ? `strings.NewReader(${JSON.stringify(req.body)})` : 'nil';
   const setHeaders = headers
     .map(([k, v]) => `\treq.Header.Set(${JSON.stringify(k)}, ${JSON.stringify(v)})`)
     .join('\n');
