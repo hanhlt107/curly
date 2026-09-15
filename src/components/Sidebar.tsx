@@ -9,9 +9,24 @@ interface Props {
   onAddCollection: (name: string) => void;
   onRenameCollection: (id: string, name: string) => void;
   onRunCollection: (id: string) => void;
+  onExportCollection: (id: string) => void;
   onDeleteCollection: (id: string) => void;
   onDeleteSaved: (collectionId: string, requestId: string) => void;
+  onDuplicateSaved: (collectionId: string, requestId: string) => void;
+  onMoveSaved: (fromCollectionId: string, requestId: string, toCollectionId: string) => void;
+  onDeleteHistory: (id: string) => void;
   onClearHistory: () => void;
+}
+
+function timeAgo(at: number): string {
+  const s = Math.floor((Date.now() - at) / 1000);
+  if (s < 60) return 'vừa xong';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m} phút`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} giờ`;
+  const d = Math.floor(h / 24);
+  return `${d} ngày`;
 }
 
 const METHOD_SHORT: Record<string, string> = {
@@ -32,13 +47,23 @@ export default function Sidebar({
   onAddCollection,
   onRenameCollection,
   onRunCollection,
+  onExportCollection,
   onDeleteCollection,
   onDeleteSaved,
+  onDuplicateSaved,
+  onMoveSaved,
+  onDeleteHistory,
   onClearHistory,
 }: Props) {
   const [view, setView] = useState<'collections' | 'history'>('collections');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [historyQuery, setHistoryQuery] = useState('');
+
+  const q = historyQuery.trim().toLowerCase();
+  const filteredHistory = q
+    ? history.filter((h) => h.url.toLowerCase().includes(q) || h.method.toLowerCase().includes(q))
+    : history;
 
   const toggle = (id: string) => setExpanded((p) => ({ ...p, [id]: !p[id] }));
 
@@ -117,6 +142,18 @@ export default function Sidebar({
                       ▶
                     </button>
                   )}
+                  {c.requests.length > 0 && (
+                    <button
+                      className="row-run"
+                      title="Export ra Postman collection"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onExportCollection(c.id);
+                      }}
+                    >
+                      ↥
+                    </button>
+                  )}
                   <button
                     className="row-del"
                     title="Xóa collection"
@@ -140,11 +177,42 @@ export default function Sidebar({
                           {r.name}
                         </span>
                         <button
+                          className="row-run"
+                          title="Nhân bản request"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDuplicateSaved(c.id, r.id);
+                          }}
+                        >
+                          ⧉
+                        </button>
+                        {collections.length > 1 && (
+                          <select
+                            className="tree-move"
+                            title="Chuyển sang collection khác"
+                            value=""
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              const to = e.target.value;
+                              if (to) onMoveSaved(c.id, r.id, to);
+                            }}
+                          >
+                            <option value="">⇄</option>
+                            {collections
+                              .filter((other) => other.id !== c.id)
+                              .map((other) => (
+                                <option key={other.id} value={other.id}>
+                                  → {other.name}
+                                </option>
+                              ))}
+                          </select>
+                        )}
+                        <button
                           className="row-del"
                           title="Xóa request"
                           onClick={(e) => {
                             e.stopPropagation();
-                            onDeleteSaved(c.id, r.id);
+                            if (window.confirm(`Xóa request "${r.name}"?`)) onDeleteSaved(c.id, r.id);
                           }}
                         >
                           ×
@@ -167,15 +235,41 @@ export default function Sidebar({
               </button>
             )}
           </div>
+          {history.length > 0 && (
+            <input
+              className="history-search"
+              placeholder="Lọc theo URL / method…"
+              value={historyQuery}
+              onChange={(e) => setHistoryQuery(e.target.value)}
+            />
+          )}
           {history.length === 0 && <p className="side-empty">Chưa có lịch sử.</p>}
+          {history.length > 0 && filteredHistory.length === 0 && (
+            <p className="side-empty">Không có kết quả khớp.</p>
+          )}
           <ul className="tree">
-            {history.map((h) => (
-              <li key={h.id} className="tree-req flat" onClick={() => onOpenHistory(h)}>
+            {filteredHistory.map((h) => (
+              <li key={h.id} className="tree-req flat hist-row" onClick={() => onOpenHistory(h)}>
                 <span className={`m-tag m-${h.method}`}>{METHOD_SHORT[h.method]}</span>
                 <span className="tree-req-name" title={h.url}>
                   {h.url || '(trống)'}
                 </span>
-                {h.status != null && <span className={`dot s-${statusFamily(h.status)}`} />}
+                <span className="hist-meta">
+                  {h.status != null && (
+                    <span className={`h-status ${statusFamily(h.status)}`}>{h.status}</span>
+                  )}
+                  <span className="hist-time">{timeAgo(h.at)}</span>
+                </span>
+                <button
+                  className="row-del"
+                  title="Xóa khỏi lịch sử"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteHistory(h.id);
+                  }}
+                >
+                  ×
+                </button>
               </li>
             ))}
           </ul>

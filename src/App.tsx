@@ -9,7 +9,7 @@ import MethodSelect from './components/MethodSelect';
 import CodeModal from './components/CodeModal';
 import CommandPalette, { type Command } from './components/CommandPalette';
 import { runTests, TEST_PLACEHOLDER, type TestResult } from './config/tests';
-import { buildExport, parseWorkspace } from './config/workspace';
+import { buildExport, buildPostmanExport, parseWorkspace } from './config/workspace';
 import { buildShareLink, readSharedRequest } from './config/share';
 import { toCurl } from './config/curl';
 import RunnerModal from './components/RunnerModal';
@@ -17,7 +17,7 @@ import SaveModal from './components/SaveModal';
 import AuthModal from './components/AuthModal';
 import { useAuth } from './hooks/useAuth';
 import { useCloudSync } from './hooks/useCloudSync';
-import { envToRecord, resolveVars, sendRequest } from './config/apiClient';
+import { envToRecord, findUnresolvedVars, resolveVars, sendRequest } from './config/apiClient';
 import {
   POST_SCRIPT_PLACEHOLDER,
   SCRIPT_PLACEHOLDER,
@@ -161,7 +161,7 @@ export default function App() {
         tests,
         logs: logs.length ? logs : undefined,
       });
-      store.addHistory(req, res.status);
+      store.addHistory(req, res);
     } catch (err) {
       setState(tab.id, {
         loading: false,
@@ -174,6 +174,7 @@ export default function App() {
 
   const resolvedUrl = req.url ? resolveVars(req.url, vars) : '';
   const urlHasVar = /\{\{[\w.-]+\}\}/.test(req.url);
+  const unresolvedVars = useMemo(() => findUnresolvedVars(req, vars), [req, vars]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -225,15 +226,26 @@ export default function App() {
     navigator.clipboard?.writeText(curlPreview);
   };
 
-  const exportWorkspace = () => {
-    const data = buildExport(store.collections, store.environments);
+  const downloadJson = (data: unknown, filename: string) => {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `curly-workspace-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const exportWorkspace = () => {
+    const data = buildExport(store.collections, store.environments);
+    downloadJson(data, `curly-workspace-${new Date().toISOString().slice(0, 10)}.json`);
+  };
+
+  const exportCollectionAsPostman = (id: string) => {
+    const col = store.collections.find((c) => c.id === id);
+    if (!col) return;
+    const slug = col.name.replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '') || 'collection';
+    downloadJson(buildPostmanExport(col), `${slug}.postman_collection.json`);
   };
 
   const importFile = (file: File) => {
@@ -391,19 +403,28 @@ export default function App() {
             store.openSaved(s);
             setSidebarOpen(false);
           }}
-          onOpenHistory={(h) =>
+          onOpenHistory={(h) => {
+            const newId = crypto.randomUUID();
             store.openTab({
-              id: crypto.randomUUID(),
+              id: newId,
               name: h.url || 'History',
               request: structuredClone(h.request),
               dirty: false,
-            })
-          }
+            });
+            if (h.response) {
+              setState(newId, { loading: false, response: h.response, error: null });
+            }
+            setSidebarOpen(false);
+          }}
           onAddCollection={store.addCollection}
           onRenameCollection={store.renameCollection}
           onRunCollection={setRunnerId}
+          onExportCollection={exportCollectionAsPostman}
           onDeleteCollection={store.deleteCollection}
           onDeleteSaved={store.deleteSaved}
+          onDuplicateSaved={store.duplicateSaved}
+          onMoveSaved={store.moveSaved}
+          onDeleteHistory={store.deleteHistoryEntry}
           onClearHistory={store.clearHistory}
         />
 
@@ -468,9 +489,20 @@ export default function App() {
             </button>
           </div>
 
+          {unresolvedVars.length > 0 && (
+            <div className="var-warn" title="Các biến này chưa có trong environment đang chọn">
+              <span className="var-warn-icon">⚠</span>
+              Biến chưa định nghĩa:{' '}
+              {unresolvedVars.map((v) => (
+                <code key={v}>{`{{${v}}}`}</code>
+              ))}
+              {store.activeEnv ? '' : ' — chưa chọn environment nào'}
+            </div>
+          )}
+
           <div className={`curl-strip ${showCurl ? 'open' : ''}`}>
             <button className="curl-toggle" onClick={() => setShowCurl((v) => !v)}>
-              <span className={`caret ${showCurl ? 'open' : ''}`}>▸</span> cURL
+              <span className={`curl-caret ${showCurl ? 'open' : ''}`}>▶</span> cURL
             </button>
             {showCurl && (
               <div className="curl-live">

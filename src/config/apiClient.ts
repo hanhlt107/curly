@@ -13,6 +13,34 @@ export function resolveVars(text: string, vars: Record<string, string>): string 
   );
 }
 
+/** Tìm các biến {{x}} được dùng trong request nhưng chưa có trong environment. */
+export function findUnresolvedVars(req: ApiRequest, vars: Record<string, string>): string[] {
+  const found = new Set<string>();
+  const scan = (text: string) => {
+    if (!text) return;
+    for (const m of text.matchAll(/\{\{\s*([\w.-]+)\s*\}\}/g)) {
+      if (!(m[1] in vars)) found.add(m[1]);
+    }
+  };
+  scan(req.url);
+  scan(req.body);
+  scan(req.graphqlVars);
+  for (const list of [req.params, req.headers, req.formData]) {
+    for (const item of list) {
+      if (!item.enabled) continue;
+      scan(item.key);
+      scan(item.value);
+    }
+  }
+  const { auth } = req;
+  scan(auth.bearerToken);
+  scan(auth.basicUser);
+  scan(auth.basicPass);
+  scan(auth.apiKeyName);
+  scan(auth.apiKeyValue);
+  return [...found];
+}
+
 export function envToRecord(vars: KeyValue[]): Record<string, string> {
   const out: Record<string, string> = {};
   for (const v of vars) {

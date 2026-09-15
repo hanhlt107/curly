@@ -11,13 +11,30 @@ export const SNIPPET_LANGS: { id: SnippetLang; label: string }[] = [
   { id: 'go', label: 'Go' },
 ];
 
+function queryPairs(req: ApiRequest): [string, string][] {
+  const out: [string, string][] = req.params
+    .filter((p) => p.enabled && p.key.trim())
+    .map((p): [string, string] => [p.key, p.value]);
+  const { auth } = req;
+  if (auth.type === 'apikey' && auth.apiKeyIn === 'query' && auth.apiKeyName.trim()) {
+    out.push([auth.apiKeyName.trim(), auth.apiKeyValue]);
+  }
+  return out;
+}
+
 function fullUrl(req: ApiRequest): string {
-  const enabled = req.params.filter((p) => p.enabled && p.key.trim());
+  const enabled = queryPairs(req);
   if (!enabled.length) return req.url;
   const qs = enabled
-    .map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
     .join('&');
   return req.url.includes('?') ? `${req.url}&${qs}` : `${req.url}?${qs}`;
+}
+
+function contentType(req: ApiRequest): string | null {
+  if (req.bodyType === 'json' || req.bodyType === 'graphql') return 'application/json';
+  if (req.bodyType === 'urlencoded') return 'application/x-www-form-urlencoded';
+  return null;
 }
 
 function headerPairs(req: ApiRequest): [string, string][] {
@@ -28,18 +45,49 @@ function headerPairs(req: ApiRequest): [string, string][] {
   if (auth.type === 'bearer' && auth.bearerToken.trim()) {
     out.push(['Authorization', `Bearer ${auth.bearerToken.trim()}`]);
   } else if (auth.type === 'basic') {
-    out.push(['Authorization', `Basic <base64(${auth.basicUser}:${auth.basicPass})>`]);
+    out.push(['Authorization', `Basic ${btoa(`${auth.basicUser}:${auth.basicPass}`)}`]);
   } else if (auth.type === 'apikey' && auth.apiKeyIn === 'header' && auth.apiKeyName.trim()) {
     out.push([auth.apiKeyName.trim(), auth.apiKeyValue]);
   }
-  if (req.bodyType === 'json' && !out.some(([k]) => k.toLowerCase() === 'content-type')) {
-    out.push(['Content-Type', 'application/json']);
+  const ct = contentType(req);
+  if (ct && !out.some(([k]) => k.toLowerCase() === 'content-type')) {
+    out.push(['Content-Type', ct]);
   }
   return out;
 }
 
+function bodyPairs(req: ApiRequest): [string, string][] {
+  return req.formData
+    .filter((p) => p.enabled && p.key.trim())
+    .map((p): [string, string] => [p.key, p.value]);
+}
+
+function graphqlBody(req: ApiRequest): string {
+  const payload: { query: string; variables?: unknown } = { query: req.body };
+  if (req.graphqlVars.trim()) {
+    try {
+      payload.variables = JSON.parse(req.graphqlVars);
+    } catch {
+      payload.variables = req.graphqlVars;
+    }
+  }
+  return JSON.stringify(payload);
+}
+
+function rawBody(req: ApiRequest): string {
+  if (req.bodyType === 'graphql') return graphqlBody(req);
+  if (req.bodyType === 'urlencoded') {
+    return bodyPairs(req)
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join('&');
+  }
+  return req.body;
+}
+
 function hasBody(req: ApiRequest): boolean {
-  return req.bodyType !== 'none' && req.body.trim() !== '';
+  if (req.bodyType === 'none') return false;
+  if (req.bodyType === 'form' || req.bodyType === 'urlencoded') return bodyPairs(req).length > 0;
+  return req.body.trim() !== '';
 }
 
 function jsObject(pairs: [string, string][]): string {
@@ -48,11 +96,26 @@ function jsObject(pairs: [string, string][]): string {
   return `{\n${inner}\n  }`;
 }
 
+function pyDict(pairs: [string, string][], indent: string): string {
+  if (!pairs.length) return '{}';
+  const inner = pairs
+    .map(([k, v]) => `${indent}    ${JSON.stringify(k)}: ${JSON.stringify(v)}`)
+    .join(',\n');
+  return `{\n${inner}\n${indent}}`;
+}
+
 function fetchSnippet(req: ApiRequest): string {
   const headers = headerPairs(req);
   const opts: string[] = [`  method: ${JSON.stringify(req.method)}`];
   if (headers.length) opts.push(`  headers: ${jsObject(headers)}`);
-  if (hasBody(req)) opts.push(`  body: ${JSON.stringify(req.body)}`);
+  if (req.bodyType === 'form' && bodyPairs(req).length) {
+    const appends = bodyPairs(req)
+      .map(([k, v]) => `body.append(${JSON.stringify(k)}, ${JSON.stringify(v)});`)
+      .join('\n');
+    opts.push('  body');
+    return `const body = new FormData();\n${appends}\n\nconst res = await fetch(${JSON.stringify(fullUrl(req))}, {\n${opts.join(',\n')}\n});\nconst data = await res.json();\nconsole.log(data);`;
+  }
+  if (hasBody(req)) opts.push(`  body: ${JSON.stringify(rawBody(req))}`);
   return `const res = await fetch(${JSON.stringify(fullUrl(req))}, {\n${opts.join(',\n')}\n});\nconst data = await res.json();\nconsole.log(data);`;
 }
 
@@ -63,27 +126,41 @@ function axiosSnippet(req: ApiRequest): string {
     `  url: ${JSON.stringify(fullUrl(req))}`,
   ];
   if (headers.length) cfg.push(`  headers: ${jsObject(headers)}`);
+  if (req.bodyType === 'form' && bodyPairs(req).length) {
+    const appends = bodyPairs(req)
+      .map(([k, v]) => `data.append(${JSON.stringify(k)}, ${JSON.stringify(v)});`)
+      .join('\n');
+    cfg.push('  data');
+    return `import axios from 'axios';\n\nconst data = new FormData();\n${appends}\n\nconst res = await axios({\n${cfg.join(',\n')}\n});\nconsole.log(res.data);`;
+  }
   if (hasBody(req)) {
-    const dataVal = req.bodyType === 'json' ? req.body : JSON.stringify(req.body);
+    const dataVal =
+      req.bodyType === 'json' || req.bodyType === 'graphql'
+        ? rawBody(req)
+        : JSON.stringify(rawBody(req));
     cfg.push(`  data: ${dataVal}`);
   }
   return `import axios from 'axios';\n\nconst res = await axios({\n${cfg.join(',\n')}\n});\nconsole.log(res.data);`;
 }
 
 function pythonSnippet(req: ApiRequest): string {
-  const headers = headerPairs(req);
+  const headers = headerPairs(req).filter(([k]) => k.toLowerCase() !== 'content-type');
   const lines: string[] = ['import requests', ''];
   if (headers.length) {
-    const hs = headers
-      .map(([k, v]) => `    ${JSON.stringify(k)}: ${JSON.stringify(v)}`)
-      .join(',\n');
-    lines.push(`headers = {\n${hs}\n}`);
+    lines.push(`headers = ${pyDict(headers, '')}`);
   }
   const args = [`    ${JSON.stringify(fullUrl(req))}`];
   if (headers.length) args.push('    headers=headers');
-  if (hasBody(req)) {
-    if (req.bodyType === 'json') args.push(`    data=${JSON.stringify(req.body)}`);
-    else args.push(`    data=${JSON.stringify(req.body)}`);
+  if (req.bodyType === 'json') {
+    args.push(`    json=${req.body.trim() || '{}'}`);
+  } else if (req.bodyType === 'graphql') {
+    args.push(`    json=${graphqlBody(req)}`);
+  } else if (req.bodyType === 'form' && bodyPairs(req).length) {
+    args.push(`    files=${pyDict(bodyPairs(req), '    ')}`);
+  } else if (req.bodyType === 'urlencoded' && bodyPairs(req).length) {
+    args.push(`    data=${pyDict(bodyPairs(req), '    ')}`);
+  } else if (hasBody(req)) {
+    args.push(`    data=${JSON.stringify(rawBody(req))}`);
   }
   lines.push(`res = requests.${req.method.toLowerCase()}(\n${args.join(',\n')}\n)`);
   lines.push('print(res.status_code)');
@@ -93,7 +170,8 @@ function pythonSnippet(req: ApiRequest): string {
 
 function goSnippet(req: ApiRequest): string {
   const headers = headerPairs(req);
-  const bodyExpr = hasBody(req) ? `strings.NewReader(${JSON.stringify(req.body)})` : 'nil';
+  const body = hasBody(req);
+  const bodyExpr = body ? `strings.NewReader(${JSON.stringify(rawBody(req))})` : 'nil';
   const setHeaders = headers
     .map(([k, v]) => `\treq.Header.Set(${JSON.stringify(k)}, ${JSON.stringify(v)})`)
     .join('\n');
@@ -104,7 +182,7 @@ function goSnippet(req: ApiRequest): string {
     '\t"fmt"',
     '\t"io"',
     '\t"net/http"',
-    hasBody(req) ? '\t"strings"' : '',
+    body ? '\t"strings"' : '',
     ')',
     '',
     'func main() {',

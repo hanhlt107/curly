@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Environment, KeyValue } from '../types/request';
 import KeyValueEditor, { newRow } from './KeyValueEditor';
@@ -21,13 +21,31 @@ export default function EnvironmentBar({
   onDelete,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(activeEnvId);
+  const pickerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const exists = environments.some((e) => e.id === editingId);
     if (!exists) setEditingId(activeEnvId ?? environments[environments.length - 1]?.id ?? null);
   }, [open, environments, editingId, activeEnvId]);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setPickerOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [pickerOpen]);
+
+  const activeName = environments.find((e) => e.id === activeEnvId)?.name ?? 'No Environment';
+
+  const pick = (id: string | null) => {
+    onSelect(id);
+    setPickerOpen(false);
+  };
 
   const editing = environments.find((e) => e.id === editingId) ?? null;
 
@@ -44,18 +62,41 @@ export default function EnvironmentBar({
     <>
       <div className="env-bar">
         <span className="env-icon">◈</span>
-        <select
-          className="env-select"
-          value={activeEnvId ?? ''}
-          onChange={(e) => onSelect(e.target.value || null)}
-        >
-          <option value="">No Environment</option>
-          {environments.map((e) => (
-            <option key={e.id} value={e.id}>
-              {e.name}
-            </option>
-          ))}
-        </select>
+        <div className={`env-picker ${pickerOpen ? 'open' : ''}`} ref={pickerRef}>
+          <button
+            type="button"
+            className="env-trigger"
+            onClick={() => setPickerOpen((o) => !o)}
+          >
+            <span className="env-trigger-name">{activeName}</span>
+            <span className="env-caret">▼</span>
+          </button>
+          {pickerOpen && (
+            <ul className="env-menu" role="listbox">
+              <li
+                role="option"
+                aria-selected={activeEnvId == null}
+                className={`env-option ${activeEnvId == null ? 'sel' : ''}`}
+                onClick={() => pick(null)}
+              >
+                <span>No Environment</span>
+                {activeEnvId == null && <span className="env-check">✓</span>}
+              </li>
+              {environments.map((e) => (
+                <li
+                  key={e.id}
+                  role="option"
+                  aria-selected={e.id === activeEnvId}
+                  className={`env-option ${e.id === activeEnvId ? 'sel' : ''}`}
+                  onClick={() => pick(e.id)}
+                >
+                  <span>{e.name}</span>
+                  {e.id === activeEnvId && <span className="env-check">✓</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         <button className="env-gear" onClick={openModal} title="Quản lý environment">
           ⚙
         </button>

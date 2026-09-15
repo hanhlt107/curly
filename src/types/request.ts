@@ -118,5 +118,7 @@ export interface HistoryEntry {
   method: HttpMethod;
   url: string;
   status?: number;
+  durationMs?: number;
+  response?: ApiResponse;
   request: ApiRequest;
 }

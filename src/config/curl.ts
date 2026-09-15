@@ -65,6 +65,8 @@ export function parseCurl(input: string): ApiRequest {
   let method: HttpMethod | '' = '';
   const headers: KeyValue[] = [];
   let body = '';
+  const formFields: KeyValue[] = [];
+  let sawForm = false;
   const auth = emptyAuth();
 
   for (let i = 0; i < tokens.length; i++) {
@@ -89,6 +91,15 @@ export function parseCurl(input: string): ApiRequest {
       }
     } else if (t === '-d' || t === '--data' || t === '--data-raw' || t === '--data-binary') {
       body += (body ? '&' : '') + next();
+    } else if (t === '--data-urlencode') {
+      body += (body ? '&' : '') + next();
+    } else if (t === '-F' || t === '--form') {
+      sawForm = true;
+      const f = next();
+      const idx = f.indexOf('=');
+      if (idx > -1) {
+        formFields.push(row(f.slice(0, idx).trim(), f.slice(idx + 1).replace(/^@/, '')));
+      }
     } else if (t === '-u' || t === '--user') {
       const creds = next();
       const idx = creds.indexOf(':');
@@ -115,8 +126,17 @@ export function parseCurl(input: string): ApiRequest {
   const hasJson = headers.some(
     (h) => h.key.toLowerCase() === 'content-type' && /application\/json/i.test(h.value),
   );
+  const hasUrlEncoded = headers.some(
+    (h) =>
+      h.key.toLowerCase() === 'content-type' &&
+      /application\/x-www-form-urlencoded/i.test(h.value),
+  );
   let bodyType: ApiRequest['bodyType'] = 'none';
-  if (body) {
+  if (sawForm) {
+    bodyType = 'form';
+  } else if (body && hasUrlEncoded) {
+    bodyType = 'urlencoded';
+  } else if (body) {
     bodyType = 'raw';
     if (hasJson || /^\s*[[{]/.test(body)) {
       try {
@@ -128,7 +148,20 @@ export function parseCurl(input: string): ApiRequest {
     }
   }
 
-  if (!method) method = body ? 'POST' : 'GET';
+  let urlencodedFields: KeyValue[] = [];
+  if (bodyType === 'urlencoded') {
+    urlencodedFields = body
+      .split('&')
+      .filter(Boolean)
+      .map((pair) => {
+        const eq = pair.indexOf('=');
+        const k = eq > -1 ? pair.slice(0, eq) : pair;
+        const v = eq > -1 ? pair.slice(eq + 1) : '';
+        return row(decodeURIComponent(k), decodeURIComponent(v));
+      });
+  }
+
+  if (!method) method = body || sawForm ? 'POST' : 'GET';
 
   let params: KeyValue[] = [];
   const qIdx = url.indexOf('?');
@@ -146,14 +179,21 @@ export function parseCurl(input: string): ApiRequest {
       });
   }
 
+  const formData =
+    bodyType === 'form' && formFields.length
+      ? formFields
+      : bodyType === 'urlencoded' && urlencodedFields.length
+        ? urlencodedFields
+        : [row('', '')];
+
   return {
     method,
     url,
     params,
     headers,
     bodyType,
-    body,
-    formData: [row('', '')],
+    body: bodyType === 'form' || bodyType === 'urlencoded' ? '' : body,
+    formData,
     graphqlVars: '',
     auth,
     tests: '',
@@ -168,10 +208,16 @@ function quote(s: string): string {
 }
 
 function buildUrl(req: ApiRequest): string {
-  const enabled = req.params.filter((p) => p.enabled && p.key.trim());
+  const enabled = req.params
+    .filter((p) => p.enabled && p.key.trim())
+    .map((p): [string, string] => [p.key, p.value]);
+  const { auth } = req;
+  if (auth.type === 'apikey' && auth.apiKeyIn === 'query' && auth.apiKeyName.trim()) {
+    enabled.push([auth.apiKeyName.trim(), auth.apiKeyValue]);
+  }
   if (!enabled.length) return req.url;
   const qs = enabled
-    .map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
     .join('&');
   return req.url.includes('?') ? `${req.url}&${qs}` : `${req.url}?${qs}`;
 }
@@ -185,6 +231,33 @@ function authHeaders(req: ApiRequest): KeyValue[] {
     out.push(row(auth.apiKeyName.trim(), auth.apiKeyValue));
   }
   return out;
+}
+
+function bodyLines(req: ApiRequest): string[] {
+  if (req.bodyType === 'none') return [];
+  if (req.bodyType === 'form') {
+    return req.formData
+      .filter((p) => p.enabled && p.key.trim())
+      .map((p) => `-F ${quote(`${p.key}=${p.value}`)}`);
+  }
+  if (req.bodyType === 'urlencoded') {
+    return req.formData
+      .filter((p) => p.enabled && p.key.trim())
+      .map((p) => `--data-urlencode ${quote(`${p.key}=${p.value}`)}`);
+  }
+  if (req.bodyType === 'graphql') {
+    if (!req.body.trim()) return [];
+    const payload: { query: string; variables?: unknown } = { query: req.body };
+    if (req.graphqlVars.trim()) {
+      try {
+        payload.variables = JSON.parse(req.graphqlVars);
+      } catch {
+        payload.variables = req.graphqlVars;
+      }
+    }
+    return [`--data-raw ${quote(JSON.stringify(payload))}`];
+  }
+  return req.body.trim() ? [`--data-raw ${quote(req.body)}`] : [];
 }
 
 export function toCurl(req: ApiRequest): string {
@@ -202,9 +275,7 @@ export function toCurl(req: ApiRequest): string {
   if (req.auth.type === 'basic') {
     lines.push(`-u ${quote(`${req.auth.basicUser}:${req.auth.basicPass}`)}`);
   }
-  if (req.bodyType !== 'none' && req.body.trim()) {
-    lines.push(`--data-raw ${quote(req.body)}`);
-  }
+  lines.push(...bodyLines(req));
 
   return lines.join(' \\\n  ');
 }

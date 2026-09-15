@@ -4,6 +4,7 @@ import {
   blankRequest,
   emptyAuth,
   type ApiRequest,
+  type ApiResponse,
   type Collection,
   type Environment,
   type HistoryEntry,
@@ -14,6 +15,16 @@ import {
 export { blankRequest };
 
 const KEY = 'curly:state:v1';
+const MAX_RESPONSE_CHARS = 100_000;
+
+function capResponse(res: ApiResponse): ApiResponse {
+  if (res.raw.length <= MAX_RESPONSE_CHARS) return res;
+  return {
+    ...res,
+    data: undefined,
+    raw: res.raw.slice(0, MAX_RESPONSE_CHARS) + '\n… (đã cắt bớt trong lịch sử)',
+  };
+}
 
 function normalizeRequest(r: ApiRequest): ApiRequest {
   const row = () => ({ id: crypto.randomUUID(), enabled: true, key: '', value: '' });
@@ -197,32 +208,74 @@ export function useStore() {
     );
   }, []);
 
-  /** Lưu tab hiện tại vào collection (tạo mới hoặc cập nhật). */
+  const duplicateSaved = useCallback((collectionId: string, requestId: string) => {
+    setCollections((prev) =>
+      prev.map((c) => {
+        if (c.id !== collectionId) return c;
+        const idx = c.requests.findIndex((r) => r.id === requestId);
+        if (idx < 0) return c;
+        const src = c.requests[idx];
+        const copy: SavedRequest = {
+          id: crypto.randomUUID(),
+          name: `${src.name} (copy)`,
+          request: structuredClone(src.request),
+        };
+        const requests = [...c.requests];
+        requests.splice(idx + 1, 0, copy);
+        return { ...c, requests };
+      }),
+    );
+  }, []);
+
+  const moveSaved = useCallback(
+    (fromCollectionId: string, requestId: string, toCollectionId: string) => {
+      if (fromCollectionId === toCollectionId) return;
+      setCollections((prev) => {
+        const src = prev.find((c) => c.id === fromCollectionId);
+        const moved = src?.requests.find((r) => r.id === requestId);
+        if (!moved) return prev;
+        return prev.map((c) => {
+          if (c.id === fromCollectionId) {
+            return { ...c, requests: c.requests.filter((r) => r.id !== requestId) };
+          }
+          if (c.id === toCollectionId) {
+            return { ...c, requests: [...c.requests, moved] };
+          }
+          return c;
+        });
+      });
+    },
+    [],
+  );
+
+  /** Lưu tab hiện tại vào collection (tạo mới, cập nhật, hoặc di chuyển). */
   const saveTabToCollection = useCallback(
     (tabId: string, collectionId: string, name: string) => {
       const tab = tabs.find((t) => t.id === tabId);
       if (!tab) return;
       const request = structuredClone(tab.request);
+      const savedId = tab.savedRequestId ?? null;
+      const reuseId =
+        savedId &&
+        collections.some((c) => c.requests.some((r) => r.id === savedId))
+          ? savedId
+          : crypto.randomUUID();
+
       setCollections((prev) =>
         prev.map((c) => {
-          if (c.id !== collectionId) return c;
-          const existing = tab.savedRequestId
-            ? c.requests.find((r) => r.id === tab.savedRequestId)
-            : undefined;
-          if (existing) {
-            return {
-              ...c,
-              requests: c.requests.map((r) => (r.id === existing.id ? { ...r, name, request } : r)),
-            };
+          const withoutOld = savedId
+            ? c.requests.filter((r) => r.id !== savedId)
+            : c.requests;
+          if (c.id !== collectionId) {
+            return withoutOld.length === c.requests.length ? c : { ...c, requests: withoutOld };
           }
-          const saved: SavedRequest = { id: crypto.randomUUID(), name, request };
-          patchTab(tabId, { name, savedRequestId: saved.id, dirty: false });
-          return { ...c, requests: [...c.requests, saved] };
+          const saved: SavedRequest = { id: reuseId, name, request };
+          return { ...c, requests: [...withoutOld, saved] };
         }),
       );
-      patchTab(tabId, { name, dirty: false });
+      patchTab(tabId, { name, savedRequestId: reuseId, dirty: false });
     },
-    [tabs, patchTab],
+    [tabs, collections, patchTab],
   );
 
   /* ---------- Environments ---------- */
@@ -266,16 +319,31 @@ export function useStore() {
   );
 
   /* ---------- History ---------- */
-  const addHistory = useCallback((request: ApiRequest, status?: number) => {
+  const addHistory = useCallback((request: ApiRequest, response?: ApiResponse) => {
     const entry: HistoryEntry = {
       id: crypto.randomUUID(),
       at: Date.now(),
       method: request.method,
       url: request.url,
-      status,
+      status: response?.status,
+      durationMs: response?.durationMs,
+      response: response ? capResponse(response) : undefined,
       request: structuredClone(request),
     };
-    setHistory((prev) => [entry, ...prev].slice(0, MAX_HISTORY));
+    setHistory((prev) => {
+      const head = prev[0];
+      const dup =
+        head &&
+        head.method === entry.method &&
+        head.url === entry.url &&
+        head.request.body === entry.request.body;
+      const rest = dup ? prev.slice(1) : prev;
+      return [entry, ...rest].slice(0, MAX_HISTORY);
+    });
+  }, []);
+
+  const deleteHistoryEntry = useCallback((id: string) => {
+    setHistory((prev) => prev.filter((h) => h.id !== id));
   }, []);
 
   const clearHistory = useCallback(() => setHistory([]), []);
@@ -306,6 +374,8 @@ export function useStore() {
     deleteCollection,
     importWorkspace,
     deleteSaved,
+    duplicateSaved,
+    moveSaved,
     saveTabToCollection,
     replaceWorkspace,
     // environments
@@ -320,6 +390,7 @@ export function useStore() {
     // history
     history,
     addHistory,
+    deleteHistoryEntry,
     clearHistory,
   };
 }
