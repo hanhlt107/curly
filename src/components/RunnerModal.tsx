@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import Button from './Button';
 import type { Collection } from '../types/request';
 import { collectRequests } from '../config/collections';
 import { sendRequest } from '../config/apiClient';
@@ -271,14 +272,14 @@ export default function RunnerModal({ collection, vars, onApplyVars, onClose }: 
             Dừng khi lỗi
           </label>
           <div className="runner-data">
-            <button
-              className="ghost-btn sm"
+            <Button
+              size="sm"
               disabled={running}
               onClick={() => fileRef.current?.click()}
               title="File CSV hoặc JSON, mỗi dòng là một bộ biến {{var}}"
             >
               ↧ File dữ liệu
-            </button>
+            </Button>
             {dataset && (
               <span className="data-info">
                 {dataName}
@@ -373,22 +374,16 @@ export default function RunnerModal({ collection, vars, onApplyVars, onClose }: 
         </div>
 
         <div className="modal-foot">
-          <button className="ghost-btn" onClick={onClose}>
-            Đóng
-          </button>
+          <Button onClick={onClose}>Đóng</Button>
           {done && (
             <>
-              <button className="ghost-btn" onClick={copyReport}>
-                {copiedReport ? '✓ Đã copy' : 'Copy report'}
-              </button>
-              <button className="ghost-btn" onClick={exportReport}>
-                Export JSON
-              </button>
+              <Button onClick={copyReport}>{copiedReport ? '✓ Đã copy' : 'Copy report'}</Button>
+              <Button onClick={exportReport}>Export JSON</Button>
             </>
           )}
-          <button className="send-btn" onClick={run} disabled={running}>
+          <Button variant="primary" onClick={run} disabled={running}>
             {done ? 'Chạy lại' : running ? 'Đang chạy…' : 'Chạy'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>,

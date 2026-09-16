@@ -25,7 +25,12 @@ import {
   type MockRule,
   type RequestTab,
   type SavedRequest,
+  type Workflow,
+  type WorkflowStep,
+  type WorkflowExtraction,
+  type CustomDynamicVar,
 } from '../types/request';
+import { setCustomDynamicVars } from '../config/dynamicVars';
 
 export { blankRequest };
 
@@ -94,6 +99,47 @@ function normalizeVars(list: KeyValue[]): KeyValue[] {
   }));
 }
 
+function normalizeExtraction(e: WorkflowExtraction): WorkflowExtraction {
+  const source = e?.source === 'header' || e?.source === 'status' ? e.source : 'body';
+  return {
+    id: typeof e?.id === 'string' ? e.id : crypto.randomUUID(),
+    source,
+    path: typeof e?.path === 'string' ? e.path : '',
+    varName: typeof e?.varName === 'string' ? e.varName : '',
+  };
+}
+
+function normalizeStep(s: WorkflowStep): WorkflowStep {
+  return {
+    id: typeof s?.id === 'string' ? s.id : crypto.randomUUID(),
+    collectionId: typeof s?.collectionId === 'string' ? s.collectionId : '',
+    requestId: typeof s?.requestId === 'string' ? s.requestId : '',
+    name: typeof s?.name === 'string' ? s.name : 'Request',
+    extractions: Array.isArray(s?.extractions) ? s.extractions.map(normalizeExtraction) : [],
+  };
+}
+
+function normalizeWorkflow(w: Workflow): Workflow {
+  return {
+    id: typeof w?.id === 'string' ? w.id : crypto.randomUUID(),
+    name: typeof w?.name === 'string' ? w.name : 'Workflow',
+    steps: Array.isArray(w?.steps) ? w.steps.map(normalizeStep) : [],
+  };
+}
+
+export function sanitizeDynVarName(raw: string): string {
+  return (raw || '').replace(/^\$+/, '').replace(/[^\w.-]/g, '');
+}
+
+function normalizeCustomDynVar(v: CustomDynamicVar): CustomDynamicVar {
+  return {
+    id: typeof v?.id === 'string' ? v.id : crypto.randomUUID(),
+    name: sanitizeDynVarName(typeof v?.name === 'string' ? v.name : ''),
+    template: typeof v?.template === 'string' ? v.template : '',
+    desc: typeof v?.desc === 'string' ? v.desc : '',
+  };
+}
+
 function newTab(name = 'Request mới', request = blankRequest()): RequestTab {
   return { id: crypto.randomUUID(), name, request, dirty: false };
 }
@@ -111,6 +157,8 @@ interface PersistState {
   cookieJarEnabled: boolean;
   mocks: MockRule[];
   mockMode: boolean;
+  workflows: Workflow[];
+  customDynVars: CustomDynamicVar[];
 }
 
 const DEFAULT_HISTORY_LIMIT = 50;
@@ -146,6 +194,10 @@ function loadPersist(): PersistState {
         cookieJarEnabled: p.cookieJarEnabled ?? true,
         mocks: p.mocks ?? [],
         mockMode: p.mockMode ?? false,
+        workflows: Array.isArray(p.workflows) ? p.workflows.map(normalizeWorkflow) : [],
+        customDynVars: Array.isArray(p.customDynVars)
+          ? p.customDynVars.map(normalizeCustomDynVar)
+          : [],
       };
     }
   } catch {
@@ -166,6 +218,8 @@ function loadPersist(): PersistState {
     cookieJarEnabled: true,
     mocks: [],
     mockMode: false,
+    workflows: [],
+    customDynVars: [],
   };
 }
 
@@ -186,6 +240,14 @@ export function useStore() {
   );
   const [mocks, setMocks] = useState<MockRule[]>(initial.current.mocks);
   const [mockMode, setMockMode] = useState<boolean>(initial.current.mockMode);
+  const [workflows, setWorkflows] = useState<Workflow[]>(initial.current.workflows);
+  const [customDynVars, setCustomDynVars] = useState<CustomDynamicVar[]>(
+    initial.current.customDynVars,
+  );
+
+  useEffect(() => {
+    setCustomDynamicVars(customDynVars);
+  }, [customDynVars]);
 
   useEffect(() => {
     const state: PersistState = {
@@ -201,6 +263,8 @@ export function useStore() {
       cookieJarEnabled,
       mocks,
       mockMode,
+      workflows,
+      customDynVars,
     };
     localStorage.setItem(KEY, JSON.stringify(state));
   }, [
@@ -216,6 +280,8 @@ export function useStore() {
     cookieJarEnabled,
     mocks,
     mockMode,
+    workflows,
+    customDynVars,
   ]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
@@ -583,6 +649,57 @@ export function useStore() {
     setEnvironments(envs.map((e) => ({ ...e, variables: normalizeVars(e.variables) })));
   }, []);
 
+  const addWorkflow = useCallback((name: string) => {
+    const wf: Workflow = {
+      id: crypto.randomUUID(),
+      name: name.trim() || 'Chuỗi mới',
+      steps: [],
+    };
+    setWorkflows((prev) => [...prev, wf]);
+    return wf.id;
+  }, []);
+
+  const renameWorkflow = useCallback((id: string, name: string) => {
+    setWorkflows((prev) => prev.map((w) => (w.id === id ? { ...w, name } : w)));
+  }, []);
+
+  const deleteWorkflow = useCallback((id: string) => {
+    setWorkflows((prev) => prev.filter((w) => w.id !== id));
+  }, []);
+
+  const updateWorkflow = useCallback((id: string, patch: Partial<Workflow>) => {
+    setWorkflows((prev) => prev.map((w) => (w.id === id ? { ...w, ...patch } : w)));
+  }, []);
+
+  const addCustomDynVar = useCallback(() => {
+    const v: CustomDynamicVar = {
+      id: crypto.randomUUID(),
+      name: '',
+      template: '',
+      desc: '',
+    };
+    setCustomDynVars((prev) => [...prev, v]);
+    return v.id;
+  }, []);
+
+  const updateCustomDynVar = useCallback((id: string, patch: Partial<CustomDynamicVar>) => {
+    setCustomDynVars((prev) =>
+      prev.map((v) =>
+        v.id === id
+          ? {
+              ...v,
+              ...patch,
+              ...(patch.name !== undefined ? { name: sanitizeDynVarName(patch.name) } : {}),
+            }
+          : v,
+      ),
+    );
+  }, []);
+
+  const deleteCustomDynVar = useCallback((id: string) => {
+    setCustomDynVars((prev) => prev.filter((v) => v.id !== id));
+  }, []);
+
   const changeHistoryLimit = useCallback((limit: number) => {
     const next = Math.max(1, Math.floor(limit) || DEFAULT_HISTORY_LIMIT);
     setHistoryLimit(next);
@@ -649,5 +766,14 @@ export function useStore() {
     addMock,
     updateMock,
     deleteMock,
+    workflows,
+    addWorkflow,
+    renameWorkflow,
+    deleteWorkflow,
+    updateWorkflow,
+    customDynVars,
+    addCustomDynVar,
+    updateCustomDynVar,
+    deleteCustomDynVar,
   };
 }

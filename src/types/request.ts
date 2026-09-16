@@ -37,6 +37,17 @@ export function emptyAuth(): Auth {
   };
 }
 
+export type SnapshotMode = 'strict' | 'structural';
+
+export interface RequestSnapshot {
+  at: number;
+  status: number;
+  contentType: string;
+  data: unknown;
+  raw: string;
+  mode: SnapshotMode;
+}
+
 export interface ApiRequest {
   protocol: Protocol;
   method: HttpMethod;
@@ -53,6 +64,7 @@ export interface ApiRequest {
   preScript: string;
   postScript: string;
   autoToken: boolean;
+  snapshot?: RequestSnapshot | null;
 }
 
 export function blankRequest(): ApiRequest {
@@ -162,4 +174,34 @@ export interface HistoryEntry {
   durationMs?: number;
   response?: ApiResponse;
   request: ApiRequest;
+}
+
+export type ExtractSource = 'body' | 'header' | 'status';
+
+export interface WorkflowExtraction {
+  id: string;
+  source: ExtractSource;
+  path: string;
+  varName: string;
+}
+
+export interface WorkflowStep {
+  id: string;
+  collectionId: string;
+  requestId: string;
+  name: string;
+  extractions: WorkflowExtraction[];
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  steps: WorkflowStep[];
+}
+
+export interface CustomDynamicVar {
+  id: string;
+  name: string;
+  template: string;
+  desc: string;
 }

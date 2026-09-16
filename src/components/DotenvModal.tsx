@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import Button from './Button';
 import type { Environment } from '../types/request';
 import { parseDotenv } from '../config/dotenv';
 
@@ -138,12 +139,10 @@ export default function DotenvModal({ environments, defaultEnvId, onImport, onCl
         </div>
 
         <div className="modal-foot">
-          <button className="ghost-btn" onClick={onClose}>
-            Hủy
-          </button>
-          <button className="send-btn" onClick={doImport} disabled={!pairs.length}>
+          <Button onClick={onClose}>Hủy</Button>
+          <Button variant="primary" onClick={doImport} disabled={!pairs.length}>
             Import {pairs.length ? `(${pairs.length})` : ''}
-          </button>
+          </Button>
         </div>
       </div>
     </div>,

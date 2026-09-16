@@ -1,17 +1,22 @@
 import axios, { AxiosError, type AxiosRequestConfig } from 'axios';
 import type { ApiRequest, ApiResponse, Cookie, KeyValue, RequestError } from '../types/request';
 import { buildCookieHeader, matchCookies } from './cookies';
+import { isDynamicVar, resolveDynamic } from './dynamicVars';
 
 const client = axios.create({
   timeout: 30000,
   validateStatus: () => true,
 });
 
+const VAR_RE = /\{\{\s*([\w.$:-]+)\s*\}\}/g;
+
 /** Thay {{var}} bằng giá trị trong environment. */
 export function resolveVars(text: string, vars: Record<string, string>): string {
-  return text.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (whole, name: string) =>
-    name in vars ? vars[name] : whole,
-  );
+  return text.replace(VAR_RE, (whole, name: string) => {
+    if (name in vars) return vars[name];
+    const dyn = resolveDynamic(name);
+    return dyn !== null ? dyn : whole;
+  });
 }
 
 /** Tìm các biến {{x}} được dùng trong request nhưng chưa có trong environment. */
@@ -19,8 +24,8 @@ export function findUnresolvedVars(req: ApiRequest, vars: Record<string, string>
   const found = new Set<string>();
   const scan = (text: string) => {
     if (!text) return;
-    for (const m of text.matchAll(/\{\{\s*([\w.-]+)\s*\}\}/g)) {
-      if (!(m[1] in vars)) found.add(m[1]);
+    for (const m of text.matchAll(/\{\{\s*([\w.$:-]+)\s*\}\}/g)) {
+      if (!(m[1] in vars) && !isDynamicVar(m[1])) found.add(m[1]);
     }
   };
   scan(req.url);

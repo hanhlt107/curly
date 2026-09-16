@@ -64,6 +64,48 @@ export function matchMock(
   return null;
 }
 
+const MOCK_HEADER_ALLOW = new Set([
+  'content-type',
+  'cache-control',
+  'etag',
+  'content-language',
+  'vary',
+]);
+
+export function mockFromResponse(
+  req: ApiRequest,
+  res: ApiResponse,
+  vars: Record<string, string> = {},
+): MockRule {
+  const resolvedUrl = stripQuery(resolveVars(req.url, vars).trim());
+  const pattern = pathOf(resolvedUrl) || resolvedUrl || '/';
+  const headers: KeyValue[] = [];
+  for (const [k, v] of Object.entries(res.headers || {})) {
+    if (MOCK_HEADER_ALLOW.has(k.toLowerCase())) {
+      headers.push({ id: crypto.randomUUID(), enabled: true, key: k, value: v });
+    }
+  }
+  if (!headers.some((h) => h.key.toLowerCase() === 'content-type')) {
+    headers.push({
+      id: crypto.randomUUID(),
+      enabled: true,
+      key: 'Content-Type',
+      value: 'application/json',
+    });
+  }
+  return {
+    id: crypto.randomUUID(),
+    enabled: true,
+    name: `${req.method} ${pattern}`,
+    method: req.method,
+    urlPattern: pattern,
+    status: res.status || 200,
+    headers,
+    body: res.raw ?? '',
+    delayMs: 0,
+  };
+}
+
 function headersToRecord(list: KeyValue[]): Record<string, string> {
   const out: Record<string, string> = {};
   for (const h of list) {

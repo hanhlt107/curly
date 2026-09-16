@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import Button from './Button';
 import type { ApiRequest } from '../types/request';
 import { parseCurl } from '../config/curl';
 import { generateSnippet, SNIPPET_LANGS, type SnippetLang } from '../config/snippets';
@@ -8,19 +9,28 @@ interface Props {
   request: ApiRequest;
   onImport: (req: ApiRequest) => void;
   onImportSpec: (text: string) => number;
+  onImportHar: (text: string) => number;
   onClose: () => void;
 }
 
-type Mode = 'import' | 'openapi' | 'export';
+type Mode = 'import' | 'openapi' | 'har' | 'export';
 
-export default function CodeModal({ request, onImport, onImportSpec, onClose }: Props) {
+export default function CodeModal({
+  request,
+  onImport,
+  onImportSpec,
+  onImportHar,
+  onClose,
+}: Props) {
   const [mode, setMode] = useState<Mode>('import');
   const [curlText, setCurlText] = useState('');
   const [specText, setSpecText] = useState('');
+  const [harText, setHarText] = useState('');
   const [err, setErr] = useState('');
   const [lang, setLang] = useState<SnippetLang>('curl');
   const [copied, setCopied] = useState(false);
   const specFileRef = useRef<HTMLInputElement>(null);
+  const harFileRef = useRef<HTMLInputElement>(null);
 
   const snippet = useMemo(() => generateSnippet(request, lang), [request, lang]);
 
@@ -62,6 +72,29 @@ export default function CodeModal({ request, onImport, onImportSpec, onClose }: 
     reader.readAsText(file);
   };
 
+  const doImportHar = () => {
+    if (!harText.trim()) return;
+    try {
+      const count = onImportHar(harText);
+      if (count === 0) {
+        setErr('Không tìm thấy request http(s) nào trong file HAR.');
+        return;
+      }
+      onClose();
+    } catch (e) {
+      setErr((e as Error).message || 'Không đọc được file HAR.');
+    }
+  };
+
+  const readHarFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      setHarText(String(reader.result));
+      setErr('');
+    };
+    reader.readAsText(file);
+  };
+
   const copy = () => {
     navigator.clipboard?.writeText(snippet);
     setCopied(true);
@@ -90,6 +123,15 @@ export default function CodeModal({ request, onImport, onImportSpec, onClose }: 
               }}
             >
               OpenAPI
+            </button>
+            <button
+              className={mode === 'har' ? 'on' : ''}
+              onClick={() => {
+                setMode('har');
+                setErr('');
+              }}
+            >
+              HAR
             </button>
             <button
               className={mode === 'export' ? 'on' : ''}
@@ -162,6 +204,41 @@ export default function CodeModal({ request, onImport, onImportSpec, onClose }: 
               </div>
               {err && <p className="code-err">{err}</p>}
             </>
+          ) : mode === 'har' ? (
+            <>
+              <p className="field-label">
+                Dán nội dung file <code>.har</code> (HTTP Archive xuất từ tab Network của DevTools),
+                hoặc tải file lên. Curly tạo collection nhóm request theo host.
+              </p>
+              <textarea
+                className="code-input"
+                autoFocus
+                spellCheck={false}
+                placeholder={'{\n  "log": {\n    "entries": [ … ]\n  }\n}'}
+                value={harText}
+                onChange={(e) => {
+                  setHarText(e.target.value);
+                  setErr('');
+                }}
+              />
+              <div className="dotenv-controls">
+                <button className="env-add" onClick={() => harFileRef.current?.click()}>
+                  ↧ Chọn file .har
+                </button>
+                <input
+                  ref={harFileRef}
+                  type="file"
+                  accept=".har,.json,application/json"
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) readHarFile(f);
+                    e.target.value = '';
+                  }}
+                />
+              </div>
+              {err && <p className="code-err">{err}</p>}
+            </>
           ) : (
             <>
               <div className="lang-tabs">
@@ -183,30 +260,31 @@ export default function CodeModal({ request, onImport, onImportSpec, onClose }: 
         <div className="modal-foot">
           {mode === 'import' ? (
             <>
-              <button className="ghost-btn" onClick={onClose}>
-                Hủy
-              </button>
-              <button className="send-btn" onClick={doImport} disabled={!curlText.trim()}>
+              <Button onClick={onClose}>Hủy</Button>
+              <Button variant="primary" onClick={doImport} disabled={!curlText.trim()}>
                 Import
-              </button>
+              </Button>
             </>
           ) : mode === 'openapi' ? (
             <>
-              <button className="ghost-btn" onClick={onClose}>
-                Hủy
-              </button>
-              <button className="send-btn" onClick={doImportSpec} disabled={!specText.trim()}>
+              <Button onClick={onClose}>Hủy</Button>
+              <Button variant="primary" onClick={doImportSpec} disabled={!specText.trim()}>
                 Tạo collection
-              </button>
+              </Button>
+            </>
+          ) : mode === 'har' ? (
+            <>
+              <Button onClick={onClose}>Hủy</Button>
+              <Button variant="primary" onClick={doImportHar} disabled={!harText.trim()}>
+                Tạo collection
+              </Button>
             </>
           ) : (
             <>
-              <button className="ghost-btn" onClick={onClose}>
-                Đóng
-              </button>
-              <button className="send-btn" onClick={copy}>
+              <Button onClick={onClose}>Đóng</Button>
+              <Button variant="primary" onClick={copy}>
                 {copied ? '✓ Đã copy' : 'Copy code'}
-              </button>
+              </Button>
             </>
           )}
         </div>

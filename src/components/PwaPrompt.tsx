@@ -1,4 +1,5 @@
 import { useRegisterSW } from 'virtual:pwa-register/react';
+import Button from './Button';
 
 export default function PwaPrompt() {
   const {
@@ -21,13 +22,13 @@ export default function PwaPrompt() {
       </span>
       <div className="pwa-toast-actions">
         {needRefresh && (
-          <button className="send-btn sm" onClick={() => updateServiceWorker(true)}>
+          <Button variant="primary" size="sm" onClick={() => updateServiceWorker(true)}>
             Tải lại
-          </button>
+          </Button>
         )}
-        <button className="ghost-btn sm" onClick={close}>
+        <Button size="sm" onClick={close}>
           Bỏ qua
-        </button>
+        </Button>
       </div>
     </div>
   );

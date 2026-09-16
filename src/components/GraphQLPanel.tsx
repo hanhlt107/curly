@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import Button from './Button';
 import type { ApiRequest, Cookie } from '../types/request';
 import { resolveVars } from '../config/apiClient';
 import { cachedSchema, loadSchema, type GqlSchema, type GqlType } from '../config/graphql';
@@ -102,32 +103,28 @@ export default function GraphQLPanel({ req, vars, cookies, onBodyChange, onVarsC
   return (
     <div className="gql-panel">
       <div className="gql-toolbar">
-        <button
-          className="ghost-btn sm"
+        <Button
+          size="sm"
           onClick={() => (schema && !open ? setOpen(true) : introspect(false))}
           disabled={loading}
           title="Lấy schema qua introspection"
         >
           {loading ? <span className="btn-spinner" /> : '📖 Schema'}
-        </button>
+        </Button>
         {schema && (
-          <button
-            className="ghost-btn sm"
+          <Button
+            size="sm"
             onClick={() => introspect(true)}
             disabled={loading}
             title="Lấy lại schema mới nhất"
           >
             ↻ Làm mới
-          </button>
+          </Button>
         )}
         {open && (
-          <button
-            className="ghost-btn sm"
-            onClick={() => setOpen(false)}
-            title="Ẩn schema explorer"
-          >
+          <Button size="sm" onClick={() => setOpen(false)} title="Ẩn schema explorer">
             Ẩn
-          </button>
+          </Button>
         )}
         {schema && <span className="gql-hint">Bấm vào field để chèn vào query</span>}
       </div>

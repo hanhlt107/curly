@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import Button from './Button';
 import type { ConfirmOptions } from '../hooks/useDialogs';
 
 interface Props {
@@ -40,16 +41,14 @@ export default function ConfirmModal({ options, onResolve }: Props) {
           <p className="dialog-msg">{options.message}</p>
         </div>
         <div className="modal-foot">
-          <button className="ghost-btn" onClick={() => onResolve(false)}>
-            {options.cancelLabel ?? 'Hủy'}
-          </button>
-          <button
+          <Button onClick={() => onResolve(false)}>{options.cancelLabel ?? 'Hủy'}</Button>
+          <Button
             ref={confirmRef}
-            className={danger ? 'send-btn danger-btn' : 'send-btn'}
+            variant={danger ? 'danger' : 'primary'}
             onClick={() => onResolve(true)}
           >
             {options.confirmLabel ?? (danger ? 'Xóa' : 'OK')}
-          </button>
+          </Button>
         </div>
       </div>
     </div>,

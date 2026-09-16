@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import Button from './Button';
 import type { PromptOptions } from '../hooks/useDialogs';
 
 interface Props {
@@ -50,12 +51,10 @@ export default function PromptModal({ options, onResolve }: Props) {
           />
         </div>
         <div className="modal-foot">
-          <button className="ghost-btn" onClick={() => onResolve(null)}>
-            Hủy
-          </button>
-          <button className="send-btn" onClick={submit}>
+          <Button onClick={() => onResolve(null)}>Hủy</Button>
+          <Button variant="primary" onClick={submit}>
             {options.confirmLabel ?? 'OK'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>,

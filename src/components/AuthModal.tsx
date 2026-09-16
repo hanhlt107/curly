@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Button from './Button';
 import type { AuthState } from '../hooks/useAuth';
 
 interface Props {
@@ -65,9 +66,9 @@ export default function AuthModal({ auth, onClose }: Props) {
             được bình thường, dữ liệu lưu trên trình duyệt.
           </p>
 
-          <button className="ghost-btn full" onClick={google} disabled={busy}>
+          <Button block onClick={google} disabled={busy}>
             Tiếp tục với Google
-          </button>
+          </Button>
 
           <div className="auth-divider">hoặc</div>
 
@@ -103,9 +104,9 @@ export default function AuthModal({ auth, onClose }: Props) {
           >
             {mode === 'signin' ? 'Chưa có tài khoản? Đăng ký' : 'Đã có tài khoản? Đăng nhập'}
           </button>
-          <button className="send-btn" onClick={submit} disabled={busy}>
+          <Button variant="primary" onClick={submit} disabled={busy}>
             {busy ? <span className="btn-spinner" /> : mode === 'signin' ? 'Đăng nhập' : 'Đăng ký'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

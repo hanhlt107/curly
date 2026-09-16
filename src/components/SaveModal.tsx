@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import Button from './Button';
 import type { Collection, Folder } from '../types/request';
 
 interface Props {
@@ -103,9 +104,7 @@ export default function SaveModal({
                   </option>
                 ))}
               </select>
-              <button className="ghost-btn" onClick={create}>
-                + Mới
-              </button>
+              <Button onClick={create}>+ Mới</Button>
             </div>
           )}
 
@@ -127,12 +126,10 @@ export default function SaveModal({
           )}
         </div>
         <div className="modal-foot">
-          <button className="ghost-btn" onClick={onClose}>
-            Hủy
-          </button>
-          <button className="send-btn" onClick={save} disabled={!collectionId}>
+          <Button onClick={onClose}>Hủy</Button>
+          <Button variant="primary" onClick={save} disabled={!collectionId}>
             Lưu
-          </button>
+          </Button>
         </div>
       </div>
     </div>

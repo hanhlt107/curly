@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import Button from './Button';
 import { resolveVars } from '../config/apiClient';
 import type { Protocol } from '../types/request';
 
@@ -149,13 +150,13 @@ export default function RealtimePanel({ protocol, url, vars }: Props) {
         {resolved && <span className="rt-url">{resolved}</span>}
         <div className="rt-actions">
           {connected ? (
-            <button className="save-btn" onClick={disconnect}>
+            <Button variant="primary" onClick={disconnect}>
               Ngắt kết nối
-            </button>
+            </Button>
           ) : (
-            <button className="send-btn rt-connect" onClick={connect}>
+            <Button variant="primary" className="rt-connect" onClick={connect}>
               Kết nối
-            </button>
+            </Button>
           )}
           <button className="copy-btn" onClick={() => setLog([])} title="Xóa log">
             Xóa log
@@ -179,9 +180,9 @@ export default function RealtimePanel({ protocol, url, vars }: Props) {
             }}
             spellCheck={false}
           />
-          <button className="send-btn" onClick={sendMessage} disabled={status !== 'open' || !input}>
+          <Button variant="primary" onClick={sendMessage} disabled={status !== 'open' || !input}>
             Gửi
-          </button>
+          </Button>
         </div>
       )}
 

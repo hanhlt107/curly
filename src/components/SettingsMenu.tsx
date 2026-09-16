@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import Button from './Button';
 import type { Environment } from '../types/request';
 
 interface Props {
-  theme: 'dark' | 'light';
-  onToggleTheme: () => void;
   cookiesCount: number;
   onOpenCookies: () => void;
   mockMode: boolean;
@@ -11,6 +10,7 @@ interface Props {
   onOpenMock: () => void;
   onExport: () => void;
   onImport: () => void;
+  onOpenShare: () => void;
   environments: Environment[];
   activeEnvId: string | null;
   onSelectEnv: (id: string | null) => void;
@@ -24,8 +24,6 @@ interface Props {
 }
 
 export default function SettingsMenu({
-  theme,
-  onToggleTheme,
   cookiesCount,
   onOpenCookies,
   mockMode,
@@ -33,6 +31,7 @@ export default function SettingsMenu({
   onOpenMock,
   onExport,
   onImport,
+  onOpenShare,
   environments,
   activeEnvId,
   onSelectEnv,
@@ -72,9 +71,10 @@ export default function SettingsMenu({
 
   return (
     <div className={`settings-menu ${open ? 'open' : ''}`} ref={ref}>
-      <button
+      <Button
         type="button"
-        className="ghost-btn sm settings-trigger"
+        size="sm"
+        className="settings-trigger"
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -82,14 +82,9 @@ export default function SettingsMenu({
       >
         <span className="settings-gear">⚙</span> Setting
         <span className="settings-caret">▾</span>
-      </button>
+      </Button>
       {open && (
         <div className="settings-panel" role="menu">
-          <button className="settings-item" role="menuitem" onClick={() => run(onToggleTheme)}>
-            <span className="settings-ico">{theme === 'dark' ? '☾' : '☀'}</span>
-            <span className="settings-txt">Giao diện</span>
-          </button>
-
           <button className="settings-item" role="menuitem" onClick={() => run(onOpenCookies)}>
             <span className="settings-ico">🍪</span>
             <span className="settings-txt">Cookies</span>
@@ -116,6 +111,10 @@ export default function SettingsMenu({
           <button className="settings-item" role="menuitem" onClick={() => run(onImport)}>
             <span className="settings-ico">↧</span>
             <span className="settings-txt">Import workspace / Postman</span>
+          </button>
+          <button className="settings-item" role="menuitem" onClick={() => run(onOpenShare)}>
+            <span className="settings-ico">⇄</span>
+            <span className="settings-txt">Chia sẻ P2P</span>
           </button>
 
           <div className="settings-sep" />

@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom';
+import Button from './Button';
 import KeyValueEditor from './KeyValueEditor';
 import type { KeyValue, MockMethod, MockRule } from '../types/request';
 import { newMock } from '../config/mocks';
@@ -134,12 +135,8 @@ export default function MockManagerModal({
         </div>
 
         <div className="modal-foot cookie-foot">
-          <button className="ghost-btn" onClick={() => onAdd(newMock())}>
-            + Thêm mock
-          </button>
-          <button className="send-btn" onClick={onClose}>
-            Xong
-          </button>
+          <Button onClick={() => onAdd(newMock())}>+ Thêm mock</Button>
+          <Button onClick={onClose}>Xong</Button>
         </div>
       </div>
     </div>,

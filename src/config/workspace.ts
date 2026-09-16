@@ -194,6 +194,7 @@ function normalizeRequest(r: Partial<ApiRequest>): ApiRequest {
     preScript: r.preScript ?? '',
     postScript: r.postScript ?? '',
     autoToken: r.autoToken ?? true,
+    snapshot: r.snapshot ?? null,
   };
 }
 

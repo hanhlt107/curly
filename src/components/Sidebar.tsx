@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import type { Collection, Folder, HistoryEntry, SavedRequest } from '../types/request';
 import { countRequests, folderContains, moveTargets } from '../config/collections';
 import { useDialogs } from '../hooks/useDialogs';
+import KebabMenu, { type KebabItem } from './KebabMenu';
 
 interface Props {
   collections: Collection[];
@@ -60,10 +61,6 @@ const METHOD_SHORT: Record<string, string> = {
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
 type StatusClass = 'all' | '2' | '3' | '4' | '5' | 'err';
-
-function encodeTarget(collectionId: string, folderId: string | null): string {
-  return `${collectionId}::${folderId ?? ''}`;
-}
 
 export default function Sidebar({
   collections,
@@ -136,35 +133,17 @@ export default function Sidebar({
     />
   );
 
-  const moveSelect = (
-    title: string,
+  const moveItems = (
     onPick: (toCollectionId: string, toFolderId: string | null) => void,
     exclude?: (t: { collectionId: string; folderId: string | null }) => boolean,
-  ) => (
-    <select
-      className="tree-move"
-      title={title}
-      value=""
-      onClick={(e) => e.stopPropagation()}
-      onChange={(e) => {
-        if (!e.target.value) return;
-        const [cid, fid] = e.target.value.split('::');
-        onPick(cid, fid || null);
-      }}
-    >
-      <option value="">⇄</option>
-      {targets
-        .filter((t) => !exclude || !exclude(t))
-        .map((t) => (
-          <option
-            key={encodeTarget(t.collectionId, t.folderId)}
-            value={encodeTarget(t.collectionId, t.folderId)}
-          >
-            → {t.label}
-          </option>
-        ))}
-    </select>
-  );
+  ): KebabItem[] =>
+    targets
+      .filter((t) => !exclude || !exclude(t))
+      .map((t) => ({
+        icon: '→',
+        label: `Chuyển tới ${t.label}`,
+        onClick: () => onPick(t.collectionId, t.folderId),
+      }));
 
   const renderRequest = (collectionId: string, r: SavedRequest, depth: number) => (
     <li
@@ -177,36 +156,34 @@ export default function Sidebar({
       <span className="tree-req-name" title={r.name}>
         {r.name}
       </span>
-      <button
-        className="row-run"
-        title="Nhân bản request"
-        onClick={(e) => {
-          e.stopPropagation();
-          onDuplicateSaved(collectionId, r.id);
-        }}
-      >
-        ⧉
-      </button>
-      {moveSelect('Chuyển request sang collection / thư mục khác', (cid, fid) =>
-        onMoveSavedTo(collectionId, r.id, cid, fid),
-      )}
-      <button
-        className="row-del"
-        title="Xóa request"
-        onClick={async (e) => {
-          e.stopPropagation();
-          if (
-            await confirm({
-              title: 'Xóa request',
-              message: `Xóa request "${r.name}"?`,
-              danger: true,
-            })
-          )
-            onDeleteSaved(collectionId, r.id);
-        }}
-      >
-        ×
-      </button>
+      <KebabMenu
+        className="row-kebab"
+        title="Tùy chọn request"
+        items={[
+          {
+            icon: '⧉',
+            label: 'Nhân bản request',
+            onClick: () => onDuplicateSaved(collectionId, r.id),
+          },
+          ...moveItems((cid, fid) => onMoveSavedTo(collectionId, r.id, cid, fid)),
+          {
+            icon: '×',
+            label: 'Xóa request',
+            danger: true,
+            onClick: () =>
+              void (async () => {
+                if (
+                  await confirm({
+                    title: 'Xóa request',
+                    message: `Xóa request "${r.name}"?`,
+                    danger: true,
+                  })
+                )
+                  onDeleteSaved(collectionId, r.id);
+              })(),
+          },
+        ]}
+      />
     </li>
   );
 
@@ -236,50 +213,52 @@ export default function Sidebar({
             </span>
           )}
           <span className="tree-count">{countRequests(f)}</span>
-          <button
-            className="row-run"
-            title="Tạo thư mục con"
-            onClick={async (e) => {
-              e.stopPropagation();
-              const name = await prompt({
-                title: 'Tạo thư mục con',
-                message: 'Tên thư mục con:',
-                placeholder: 'Tên thư mục con',
-              });
-              if (name) {
-                onAddFolder(collectionId, f.id, name);
-                setExpanded((p) => ({ ...p, [f.id]: true }));
-              }
-            }}
-          >
-            ＋
-          </button>
-          {moveSelect(
-            'Chuyển thư mục',
-            (cid, fid) => onMoveFolderTo(collectionId, f.id, cid, fid),
-            (t) =>
-              (t.collectionId === collectionId && t.folderId === f.id) ||
-              (t.collectionId === collectionId &&
-                t.folderId != null &&
-                folderContains(f, t.folderId)),
-          )}
-          <button
-            className="row-del"
-            title="Xóa thư mục (và nội dung bên trong)"
-            onClick={async (e) => {
-              e.stopPropagation();
-              if (
-                await confirm({
-                  title: 'Xóa thư mục',
-                  message: `Xóa thư mục "${f.name}" và toàn bộ nội dung?`,
-                  danger: true,
-                })
-              )
-                onDeleteFolder(collectionId, f.id);
-            }}
-          >
-            ×
-          </button>
+          <KebabMenu
+            className="row-kebab"
+            title="Tùy chọn thư mục"
+            items={[
+              {
+                icon: '＋',
+                label: 'Tạo thư mục con',
+                onClick: () =>
+                  void (async () => {
+                    const name = await prompt({
+                      title: 'Tạo thư mục con',
+                      message: 'Tên thư mục con:',
+                      placeholder: 'Tên thư mục con',
+                    });
+                    if (name) {
+                      onAddFolder(collectionId, f.id, name);
+                      setExpanded((p) => ({ ...p, [f.id]: true }));
+                    }
+                  })(),
+              },
+              ...moveItems(
+                (cid, fid) => onMoveFolderTo(collectionId, f.id, cid, fid),
+                (t) =>
+                  (t.collectionId === collectionId && t.folderId === f.id) ||
+                  (t.collectionId === collectionId &&
+                    t.folderId != null &&
+                    folderContains(f, t.folderId)),
+              ),
+              {
+                icon: '×',
+                label: 'Xóa thư mục',
+                danger: true,
+                onClick: () =>
+                  void (async () => {
+                    if (
+                      await confirm({
+                        title: 'Xóa thư mục',
+                        message: `Xóa thư mục "${f.name}" và toàn bộ nội dung?`,
+                        danger: true,
+                      })
+                    )
+                      onDeleteFolder(collectionId, f.id);
+                  })(),
+              },
+            ]}
+          />
         </div>
         {expanded[f.id] && (
           <ul className="tree-reqs">
@@ -337,77 +316,63 @@ export default function Sidebar({
                     </span>
                   )}
                   <span className="tree-count">{countRequests(c)}</span>
-                  <button
-                    className="row-run"
-                    title="Tạo thư mục"
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      const name = await prompt({
-                        title: 'Tạo thư mục',
-                        message: 'Tên thư mục:',
-                        placeholder: 'Tên thư mục',
-                      });
-                      if (name) {
-                        onAddFolder(c.id, null, name);
-                        setExpanded((p) => ({ ...p, [c.id]: true }));
-                      }
-                    }}
-                  >
-                    🗂
-                  </button>
-                  {countRequests(c) > 0 && (
-                    <button
-                      className="row-run"
-                      title="Chạy cả collection"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onRunCollection(c.id);
-                      }}
-                    >
-                      ▶
-                    </button>
-                  )}
-                  {countRequests(c) > 0 && (
-                    <button
-                      className="row-run"
-                      title="Xem / xuất tài liệu collection"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDocsCollection(c.id);
-                      }}
-                    >
-                      📄
-                    </button>
-                  )}
-                  {countRequests(c) > 0 && (
-                    <button
-                      className="row-run"
-                      title="Export ra Postman collection"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onExportCollection(c.id);
-                      }}
-                    >
-                      ↥
-                    </button>
-                  )}
-                  <button
-                    className="row-del"
-                    title="Xóa collection"
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      if (
-                        await confirm({
-                          title: 'Xóa collection',
-                          message: `Xóa collection "${c.name}"?`,
-                          danger: true,
-                        })
-                      )
-                        onDeleteCollection(c.id);
-                    }}
-                  >
-                    ×
-                  </button>
+                  <KebabMenu
+                    className="row-kebab"
+                    title="Tùy chọn collection"
+                    items={[
+                      {
+                        icon: '🗂',
+                        label: 'Tạo thư mục',
+                        onClick: () =>
+                          void (async () => {
+                            const name = await prompt({
+                              title: 'Tạo thư mục',
+                              message: 'Tên thư mục:',
+                              placeholder: 'Tên thư mục',
+                            });
+                            if (name) {
+                              onAddFolder(c.id, null, name);
+                              setExpanded((p) => ({ ...p, [c.id]: true }));
+                            }
+                          })(),
+                      },
+                      ...(countRequests(c) > 0
+                        ? [
+                            {
+                              icon: '▶',
+                              label: 'Chạy cả collection',
+                              onClick: () => onRunCollection(c.id),
+                            },
+                            {
+                              icon: '📄',
+                              label: 'Xem / xuất tài liệu',
+                              onClick: () => onDocsCollection(c.id),
+                            },
+                            {
+                              icon: '↥',
+                              label: 'Export ra Postman',
+                              onClick: () => onExportCollection(c.id),
+                            },
+                          ]
+                        : []),
+                      {
+                        icon: '×',
+                        label: 'Xóa collection',
+                        danger: true,
+                        onClick: () =>
+                          void (async () => {
+                            if (
+                              await confirm({
+                                title: 'Xóa collection',
+                                message: `Xóa collection "${c.name}"?`,
+                                danger: true,
+                              })
+                            )
+                              onDeleteCollection(c.id);
+                          })(),
+                      },
+                    ]}
+                  />
                 </div>
                 {expanded[c.id] && (
                   <ul className="tree-reqs">

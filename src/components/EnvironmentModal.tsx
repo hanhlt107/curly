@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import Button from './Button';
 import type { Environment, KeyValue } from '../types/request';
 import KeyValueEditor, { newRow } from './KeyValueEditor';
 import DotenvModal, { type DotenvTarget } from './DotenvModal';
@@ -145,13 +146,13 @@ export default function EnvironmentModal({
                         value={editing.name}
                         onChange={(e) => onUpdate(editing.id, { name: e.target.value })}
                       />
-                      <button
-                        className="ghost-btn sm"
+                      <Button
+                        size="sm"
                         onClick={() => onExportEnv(editing.id)}
                         title="Export environment này ra file JSON"
                       >
                         ↥ Export
-                      </button>
+                      </Button>
                     </div>
                     <p className="env-var-hint">
                       Dùng biến trong request bằng cú pháp <code>{'{{tên}}'}</code>. Biến bí mật

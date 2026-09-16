@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Button from './components/Button';
+import KebabMenu from './components/KebabMenu';
 import KeyValueEditor from './components/KeyValueEditor';
 import ResponseView from './components/ResponseView';
 import Sidebar from './components/Sidebar';
@@ -20,7 +22,7 @@ import {
 } from './config/workspace';
 import { countRequests, findRequestFolderId, locateRequests } from './config/collections';
 import { parseOpenApiSpec } from './config/openapi';
-import { buildShareLink, readSharedRequest } from './config/share';
+import { parseHar } from './config/har';
 import { toCurl } from './config/curl';
 import RunnerModal from './components/RunnerModal';
 import SaveModal from './components/SaveModal';
@@ -28,12 +30,18 @@ import AuthModal from './components/AuthModal';
 import RealtimePanel from './components/RealtimePanel';
 import CookieJarModal from './components/CookieJarModal';
 import MockManagerModal from './components/MockManagerModal';
+import MultiEnvModal from './components/MultiEnvModal';
+import WorkflowModal from './components/WorkflowModal';
 import DocsModal from './components/DocsModal';
+import DynamicVarsModal from './components/DynamicVarsModal';
+import P2PShareModal, { type ReceiveSummary } from './components/P2PShareModal';
+import { buildSharedWorkspace, type SharedWorkspace } from './config/p2p';
 import GraphQLPanel from './components/GraphQLPanel';
 import InstallButton from './components/InstallButton';
+import { snapshotFromResponse } from './config/snapshot';
 import { useHotkeys } from './hooks/useHotkeys';
 import { useDialogs } from './hooks/useDialogs';
-import { matchMock, runMock } from './config/mocks';
+import { matchMock, mockFromResponse, runMock } from './config/mocks';
 import { SCHEMA_PLACEHOLDER, validateSchema, type SchemaResult } from './config/schema';
 import { useAuth } from './hooks/useAuth';
 import { useCloudSync } from './hooks/useCloudSync';
@@ -54,6 +62,7 @@ import type {
   KeyValue,
   Protocol,
   RequestError,
+  SnapshotMode,
 } from './types/request';
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
@@ -88,22 +97,17 @@ export default function App() {
   const [codeOpen, setCodeOpen] = useState(false);
   const [cookieOpen, setCookieOpen] = useState(false);
   const [mockOpen, setMockOpen] = useState(false);
+  const [multiEnvOpen, setMultiEnvOpen] = useState(false);
+  const [workflowOpen, setWorkflowOpen] = useState(false);
   const [envModalOpen, setEnvModalOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [dynVarsOpen, setDynVarsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [runnerId, setRunnerId] = useState<string | null>(null);
   const [docsId, setDocsId] = useState<string | null>(null);
   const [showCurl, setShowCurl] = useState(false);
-  const [shared, setShared] = useState(false);
-  const [theme, setTheme] = useState<'dark' | 'light'>(
-    () => (localStorage.getItem('curly:theme') as 'dark' | 'light') || 'dark',
-  );
   const fileRef = useRef<HTMLInputElement>(null);
   const urlRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('curly:theme', theme);
-  }, [theme]);
 
   type RespState = {
     loading: boolean;
@@ -266,20 +270,17 @@ export default function App() {
     onFocusUrl: () => urlRef.current?.focus(),
   });
 
-  useEffect(() => {
-    const r = readSharedRequest();
-    if (r) {
-      store.openRequest(r, r.url || 'Shared');
-      history.replaceState(null, '', location.pathname);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const saveSnapshot = () => {
+    const res = respByTab[tab.id]?.response;
+    if (!res) return;
+    const mode = req.snapshot?.mode ?? 'strict';
+    store.updateActiveRequest({ snapshot: snapshotFromResponse(res, mode) });
+  };
 
-  const shareRequest = () => {
-    const link = buildShareLink(req);
-    navigator.clipboard?.writeText(link);
-    setShared(true);
-    setTimeout(() => setShared(false), 1600);
+  const clearSnapshot = () => store.updateActiveRequest({ snapshot: null });
+
+  const setSnapshotMode = (mode: SnapshotMode) => {
+    if (req.snapshot) store.updateActiveRequest({ snapshot: { ...req.snapshot, mode } });
   };
 
   const syncLabel = useMemo(() => {
@@ -340,6 +341,41 @@ export default function App() {
     reader.readAsText(file);
   };
 
+  const receiveSharedWorkspace = async (
+    shared: SharedWorkspace,
+  ): Promise<ReceiveSummary | null> => {
+    const colCount = shared.collections?.length ?? 0;
+    const envCount = shared.environments?.length ?? 0;
+    const ok = await dialogs.confirm({
+      title: 'Nhận workspace từ thiết bị khác',
+      message: `Sẽ gộp ${colCount} collection và ${envCount} môi trường vào workspace hiện tại (không ghi đè dữ liệu cũ). Tiếp tục?`,
+      confirmLabel: 'Gộp vào',
+      cancelLabel: 'Hủy',
+    });
+    if (!ok) return null;
+    const { collections, environments } = parseWorkspace(JSON.stringify(shared));
+    store.importWorkspace(collections, environments);
+    if (Array.isArray(shared.globals) && shared.globals.length) {
+      const existingKeys = new Set(store.globals.map((v) => v.key.trim()).filter(Boolean));
+      const added = shared.globals
+        .filter((v) => v.key.trim() && !existingKeys.has(v.key.trim()))
+        .map((v) => ({
+          id: crypto.randomUUID(),
+          enabled: v.enabled ?? true,
+          key: v.key,
+          value: v.value,
+          ...(v.secret ? { secret: true as const } : {}),
+        }));
+      if (added.length) store.updateGlobals([...store.globals, ...added]);
+    }
+    const requests = collections.reduce((n, c) => n + countRequests(c), 0);
+    dialogs.toast(
+      `Đã nhận ${collections.length} collection, ${requests} request, ${environments.length} môi trường.`,
+      'success',
+    );
+    return { collections: collections.length, requests, environments: environments.length };
+  };
+
   const exportEnvironment = (id: string) => {
     const env = store.environments.find((e) => e.id === id);
     if (!env) return;
@@ -351,6 +387,27 @@ export default function App() {
     const { collections, environments } = parseOpenApiSpec(text);
     store.importWorkspace(collections, environments);
     return collections.reduce((n, c) => n + countRequests(c), 0);
+  };
+
+  const importHar = (text: string): number => {
+    const { collections, environments } = parseHar(text);
+    store.importWorkspace(collections, environments);
+    return collections.reduce((n, c) => n + countRequests(c), 0);
+  };
+
+  const saveResponseAsMock = async () => {
+    const res = respByTab[tab.id]?.response;
+    if (!res) return;
+    const mock = mockFromResponse(req, res, vars);
+    store.addMock(mock);
+    dialogs.toast(`Đã lưu response thành mock: ${mock.method} ${mock.urlPattern}`, 'success');
+    const open = await dialogs.confirm({
+      title: 'Mock đã được tạo',
+      message: 'Mở trình quản lý Mock để xem hoặc chỉnh sửa rule vừa tạo?',
+      confirmLabel: 'Mở Mock manager',
+      cancelLabel: 'Để sau',
+    });
+    if (open) setMockOpen(true);
   };
 
   const importEnvironmentFile = (file: File) => {
@@ -476,9 +533,16 @@ export default function App() {
         </h1>
         <div className="topbar-actions">
           <InstallButton />
-          <button className="ghost-btn sm" onClick={() => setPaletteOpen(true)} title="Ctrl/⌘ + K">
+          <Button
+            size="sm"
+            onClick={() => setWorkflowOpen(true)}
+            title="Nối nhiều request thành chuỗi"
+          >
+            ⚡ Workflow
+          </Button>
+          <Button size="sm" onClick={() => setPaletteOpen(true)} title="Ctrl/⌘ + K">
             <span className="kbd">⌘K</span> Tìm nhanh
-          </button>
+          </Button>
           <input
             ref={fileRef}
             type="file"
@@ -491,8 +555,6 @@ export default function App() {
             }}
           />
           <SettingsMenu
-            theme={theme}
-            onToggleTheme={() => setTheme((v) => (v === 'dark' ? 'light' : 'dark'))}
             cookiesCount={store.cookies.length}
             onOpenCookies={() => setCookieOpen(true)}
             mockMode={store.mockMode}
@@ -500,6 +562,7 @@ export default function App() {
             onOpenMock={() => setMockOpen(true)}
             onExport={exportWorkspace}
             onImport={() => fileRef.current?.click()}
+            onOpenShare={() => setShareOpen(true)}
             environments={store.environments}
             activeEnvId={store.activeEnvId}
             onSelectEnv={store.setActiveEnvId}
@@ -599,31 +662,47 @@ export default function App() {
               )}
             </div>
             {req.protocol === 'http' && (
-              <button className="send-btn" onClick={send} disabled={state.loading}>
+              <Button
+                variant="primary"
+                className="url-send"
+                onClick={send}
+                disabled={state.loading}
+              >
                 {state.loading ? <span className="btn-spinner" /> : 'Send'}
-              </button>
+              </Button>
             )}
-            <button
-              className="save-btn"
-              onClick={() => setSaveOpen(true)}
-              title="Lưu vào collection"
-            >
+            <Button variant="primary" onClick={() => setSaveOpen(true)} title="Lưu vào collection">
               Save
-            </button>
-            <button
-              className="code-btn"
-              onClick={() => setCodeOpen(true)}
-              title="Import cURL / xuất code snippet"
-            >
-              &lt;/&gt;
-            </button>
-            <button
-              className="code-btn share-btn"
-              onClick={shareRequest}
-              title="Copy link chia sẻ request"
-            >
-              {shared ? '✓' : '🔗'}
-            </button>
+            </Button>
+            <KebabMenu
+              className="url-tools"
+              title="Công cụ khác"
+              items={[
+                {
+                  icon: '</>',
+                  label: 'Code / cURL',
+                  title: 'Import cURL / xuất code snippet',
+                  onClick: () => setCodeOpen(true),
+                },
+                {
+                  icon: '{{$}}',
+                  label: 'Biến động',
+                  title: 'Biến động: {{$uuid}}, {{$timestamp}}…',
+                  onClick: () => setDynVarsOpen(true),
+                },
+                ...(req.protocol === 'http'
+                  ? [
+                      {
+                        icon: '🌐',
+                        label: 'So sánh môi trường',
+                        title: 'Chạy request này trên mọi môi trường và so sánh',
+                        disabled: !req.url.trim() || store.environments.length === 0,
+                        onClick: () => setMultiEnvOpen(true),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           </div>
 
           {unresolvedVars.length > 0 && (
@@ -856,6 +935,11 @@ export default function App() {
                 tests={state.tests}
                 schema={state.schema}
                 logs={state.logs}
+                snapshot={req.snapshot ?? null}
+                onSaveSnapshot={saveSnapshot}
+                onClearSnapshot={clearSnapshot}
+                onSetSnapshotMode={setSnapshotMode}
+                onSaveAsMock={state.response ? saveResponseAsMock : undefined}
               />
             </>
           )}
@@ -892,6 +976,7 @@ export default function App() {
           request={req}
           onImport={(r) => store.openRequest(r, r.url || 'Imported')}
           onImportSpec={importOpenApiSpec}
+          onImportHar={importHar}
           onClose={() => setCodeOpen(false)}
         />
       )}
@@ -937,7 +1022,53 @@ export default function App() {
         />
       )}
 
+      {multiEnvOpen && (
+        <MultiEnvModal
+          req={req}
+          environments={store.environments}
+          globals={store.globals}
+          cookies={store.cookieJarEnabled ? store.cookies : []}
+          mockMode={store.mockMode}
+          mocks={store.mocks}
+          onClose={() => setMultiEnvOpen(false)}
+        />
+      )}
+
+      {workflowOpen && (
+        <WorkflowModal
+          workflows={store.workflows}
+          collections={store.collections}
+          vars={vars}
+          onAdd={store.addWorkflow}
+          onRename={store.renameWorkflow}
+          onDelete={store.deleteWorkflow}
+          onUpdate={store.updateWorkflow}
+          onApplyVars={store.applyVars}
+          onClose={() => setWorkflowOpen(false)}
+        />
+      )}
+
       {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
+
+      {dynVarsOpen && (
+        <DynamicVarsModal
+          customVars={store.customDynVars}
+          onAdd={store.addCustomDynVar}
+          onUpdate={store.updateCustomDynVar}
+          onDelete={store.deleteCustomDynVar}
+          onClose={() => setDynVarsOpen(false)}
+        />
+      )}
+
+      {shareOpen && (
+        <P2PShareModal
+          getWorkspace={() =>
+            buildSharedWorkspace(store.collections, store.environments, store.globals)
+          }
+          onReceive={receiveSharedWorkspace}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
 
       {authOpen && <AuthModal auth={auth} onClose={() => setAuthOpen(false)} />}
 
@@ -957,7 +1088,9 @@ export default function App() {
       {docsId &&
         (() => {
           const col = store.collections.find((c) => c.id === docsId);
-          return col ? <DocsModal collection={col} onClose={() => setDocsId(null)} /> : null;
+          return col ? (
+            <DocsModal collection={col} history={store.history} onClose={() => setDocsId(null)} />
+          ) : null;
         })()}
     </div>
   );

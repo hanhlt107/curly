@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { Collection } from '../types/request';
+import Button from './Button';
+import type { Collection, HistoryEntry } from '../types/request';
 import { buildDocsHtml, buildDocsMarkdown } from '../config/docs';
 
 interface Props {
   collection: Collection;
+  history?: HistoryEntry[];
   onClose: () => void;
 }
 
@@ -18,9 +20,9 @@ function download(content: string, filename: string, mime: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function DocsModal({ collection, onClose }: Props) {
+export default function DocsModal({ collection, history = [], onClose }: Props) {
   const [copied, setCopied] = useState(false);
-  const markdown = useMemo(() => buildDocsMarkdown(collection), [collection]);
+  const markdown = useMemo(() => buildDocsMarkdown(collection, history), [collection, history]);
   const slug = useMemo(
     () => collection.name.replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '') || 'collection',
     [collection.name],
@@ -47,24 +49,18 @@ export default function DocsModal({ collection, onClose }: Props) {
         </div>
 
         <div className="modal-foot cookie-foot">
-          <button className="ghost-btn" onClick={copy}>
-            {copied ? '✓ Đã copy' : 'Copy Markdown'}
-          </button>
-          <button
-            className="ghost-btn"
-            onClick={() => download(markdown, `${slug}.md`, 'text/markdown')}
-          >
+          <Button onClick={copy}>{copied ? '✓ Đã copy' : 'Copy Markdown'}</Button>
+          <Button onClick={() => download(markdown, `${slug}.md`, 'text/markdown')}>
             ↧ Tải .md
-          </button>
-          <button
-            className="ghost-btn"
-            onClick={() => download(buildDocsHtml(collection), `${slug}.html`, 'text/html')}
+          </Button>
+          <Button
+            onClick={() =>
+              download(buildDocsHtml(collection, history), `${slug}.html`, 'text/html')
+            }
           >
             ↧ Tải .html
-          </button>
-          <button className="send-btn" onClick={onClose}>
-            Đóng
-          </button>
+          </Button>
+          <Button onClick={onClose}>Đóng</Button>
         </div>
       </div>
     </div>,

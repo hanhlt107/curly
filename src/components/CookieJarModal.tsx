@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom';
+import Button from './Button';
 import type { Cookie } from '../types/request';
 import { groupByDomain, newCookie } from '../config/cookies';
 
@@ -128,17 +129,9 @@ export default function CookieJarModal({
         </div>
 
         <div className="modal-foot cookie-foot">
-          {cookies.length > 0 && (
-            <button className="ghost-btn" onClick={onClearAll}>
-              Xóa tất cả
-            </button>
-          )}
-          <button className="ghost-btn" onClick={() => onAdd(newCookie())}>
-            + Thêm cookie
-          </button>
-          <button className="send-btn" onClick={onClose}>
-            Xong
-          </button>
+          {cookies.length > 0 && <Button onClick={onClearAll}>Xóa tất cả</Button>}
+          <Button onClick={() => onAdd(newCookie())}>+ Thêm cookie</Button>
+          <Button onClick={onClose}>Xong</Button>
         </div>
       </div>
     </div>,
