@@ -128,8 +128,7 @@ export function parseCurl(input: string): ApiRequest {
   );
   const hasUrlEncoded = headers.some(
     (h) =>
-      h.key.toLowerCase() === 'content-type' &&
-      /application\/x-www-form-urlencoded/i.test(h.value),
+      h.key.toLowerCase() === 'content-type' && /application\/x-www-form-urlencoded/i.test(h.value),
   );
   let bodyType: ApiRequest['bodyType'] = 'none';
   if (sawForm) {
@@ -187,6 +186,7 @@ export function parseCurl(input: string): ApiRequest {
         : [row('', '')];
 
   return {
+    protocol: 'http',
     method,
     url,
     params,
@@ -197,6 +197,7 @@ export function parseCurl(input: string): ApiRequest {
     graphqlVars: '',
     auth,
     tests: '',
+    responseSchema: '',
     preScript: '',
     postScript: '',
     autoToken: true,
@@ -216,9 +217,7 @@ function buildUrl(req: ApiRequest): string {
     enabled.push([auth.apiKeyName.trim(), auth.apiKeyValue]);
   }
   if (!enabled.length) return req.url;
-  const qs = enabled
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-    .join('&');
+  const qs = enabled.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
   return req.url.includes('?') ? `${req.url}&${qs}` : `${req.url}?${qs}`;
 }
 

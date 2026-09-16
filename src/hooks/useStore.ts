@@ -1,13 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { seedWorkspace } from '../config/seed';
 import {
+  addFolder as addFolderTo,
+  deleteFolder as deleteFolderIn,
+  duplicateRequest,
+  extractFolder,
+  findRequest,
+  folderContains,
+  insertRequest,
+  removeRequest,
+  renameFolder as renameFolderIn,
+} from '../config/collections';
+import {
   blankRequest,
   emptyAuth,
   type ApiRequest,
   type ApiResponse,
   type Collection,
+  type Cookie,
   type Environment,
+  type Folder,
   type HistoryEntry,
+  type KeyValue,
+  type MockRule,
   type RequestTab,
   type SavedRequest,
 } from '../types/request';
@@ -30,14 +45,53 @@ function normalizeRequest(r: ApiRequest): ApiRequest {
   const row = () => ({ id: crypto.randomUUID(), enabled: true, key: '', value: '' });
   return {
     ...r,
+    protocol: r.protocol ?? 'http',
     formData: r.formData?.length ? r.formData : [row()],
     graphqlVars: r.graphqlVars ?? '',
     auth: { ...emptyAuth(), ...r.auth },
     tests: r.tests ?? '',
+    responseSchema: r.responseSchema ?? '',
     preScript: r.preScript ?? '',
     postScript: r.postScript ?? '',
     autoToken: r.autoToken ?? true,
   };
+}
+
+function normalizeSaved(sr: SavedRequest): SavedRequest {
+  return {
+    id: typeof sr?.id === 'string' ? sr.id : crypto.randomUUID(),
+    name: sr?.name ?? 'Request',
+    request: normalizeRequest(sr?.request ?? blankRequest()),
+  };
+}
+
+function normalizeFolder(f: Folder): Folder {
+  return {
+    id: typeof f?.id === 'string' ? f.id : crypto.randomUUID(),
+    name: f?.name ?? 'Folder',
+    requests: Array.isArray(f?.requests) ? f.requests.map(normalizeSaved) : [],
+    folders: Array.isArray(f?.folders) ? f.folders.map(normalizeFolder) : [],
+  };
+}
+
+function normalizeCollection(c: Collection): Collection {
+  return {
+    id: typeof c?.id === 'string' ? c.id : crypto.randomUUID(),
+    name: c?.name ?? 'Collection',
+    requests: Array.isArray(c?.requests) ? c.requests.map(normalizeSaved) : [],
+    folders: Array.isArray(c?.folders) ? c.folders.map(normalizeFolder) : [],
+  };
+}
+
+function normalizeVars(list: KeyValue[]): KeyValue[] {
+  if (!Array.isArray(list)) return [];
+  return list.map((v) => ({
+    id: typeof v?.id === 'string' ? v.id : crypto.randomUUID(),
+    enabled: v?.enabled ?? true,
+    key: v?.key ?? '',
+    value: v?.value ?? '',
+    ...(v?.secret ? { secret: true } : {}),
+  }));
 }
 
 function newTab(name = 'Request mới', request = blankRequest()): RequestTab {
@@ -47,11 +101,19 @@ function newTab(name = 'Request mới', request = blankRequest()): RequestTab {
 interface PersistState {
   collections: Collection[];
   environments: Environment[];
+  globals: KeyValue[];
   activeEnvId: string | null;
   history: HistoryEntry[];
+  historyLimit: number;
   tabs: RequestTab[];
   activeTabId: string;
+  cookies: Cookie[];
+  cookieJarEnabled: boolean;
+  mocks: MockRule[];
+  mockMode: boolean;
 }
+
+const DEFAULT_HISTORY_LIMIT = 50;
 
 function loadPersist(): PersistState {
   try {
@@ -64,12 +126,26 @@ function loadPersist(): PersistState {
           : [newTab()];
       const activeTabId = tabs.some((t) => t.id === p.activeTabId) ? p.activeTabId : tabs[0].id;
       return {
-        collections: p.collections ?? [],
-        environments: p.environments ?? [],
+        collections: Array.isArray(p.collections) ? p.collections.map(normalizeCollection) : [],
+        environments: Array.isArray(p.environments)
+          ? p.environments.map((e: Environment) => ({
+              ...e,
+              variables: normalizeVars(e.variables),
+            }))
+          : [],
+        globals: normalizeVars(p.globals ?? []),
         activeEnvId: p.activeEnvId ?? null,
         history: p.history ?? [],
+        historyLimit:
+          typeof p.historyLimit === 'number' && p.historyLimit > 0
+            ? p.historyLimit
+            : DEFAULT_HISTORY_LIMIT,
         tabs,
         activeTabId,
+        cookies: p.cookies ?? [],
+        cookieJarEnabled: p.cookieJarEnabled ?? true,
+        mocks: p.mocks ?? [],
+        mockMode: p.mockMode ?? false,
       };
     }
   } catch {
@@ -80,36 +156,67 @@ function loadPersist(): PersistState {
   return {
     collections,
     environments,
+    globals: [],
     activeEnvId: environments[0]?.id ?? null,
     history: [],
+    historyLimit: DEFAULT_HISTORY_LIMIT,
     tabs: [first],
     activeTabId: first.id,
+    cookies: [],
+    cookieJarEnabled: true,
+    mocks: [],
+    mockMode: false,
   };
 }
-
-const MAX_HISTORY = 50;
 
 export function useStore() {
   const initial = useRef(loadPersist());
   const [collections, setCollections] = useState<Collection[]>(initial.current.collections);
   const [environments, setEnvironments] = useState<Environment[]>(initial.current.environments);
+  const [globals, setGlobals] = useState<KeyValue[]>(initial.current.globals);
   const [activeEnvId, setActiveEnvId] = useState<string | null>(initial.current.activeEnvId);
   const [history, setHistory] = useState<HistoryEntry[]>(initial.current.history);
+  const [historyLimit, setHistoryLimit] = useState<number>(initial.current.historyLimit);
 
   const [tabs, setTabs] = useState<RequestTab[]>(initial.current.tabs);
   const [activeTabId, setActiveTabId] = useState<string>(initial.current.activeTabId);
+  const [cookies, setCookies] = useState<Cookie[]>(initial.current.cookies);
+  const [cookieJarEnabled, setCookieJarEnabled] = useState<boolean>(
+    initial.current.cookieJarEnabled,
+  );
+  const [mocks, setMocks] = useState<MockRule[]>(initial.current.mocks);
+  const [mockMode, setMockMode] = useState<boolean>(initial.current.mockMode);
 
   useEffect(() => {
     const state: PersistState = {
       collections,
       environments,
+      globals,
       activeEnvId,
       history,
+      historyLimit,
       tabs,
       activeTabId,
+      cookies,
+      cookieJarEnabled,
+      mocks,
+      mockMode,
     };
     localStorage.setItem(KEY, JSON.stringify(state));
-  }, [collections, environments, activeEnvId, history, tabs, activeTabId]);
+  }, [
+    collections,
+    environments,
+    globals,
+    activeEnvId,
+    history,
+    historyLimit,
+    tabs,
+    activeTabId,
+    cookies,
+    cookieJarEnabled,
+    mocks,
+    mockMode,
+  ]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
 
@@ -180,7 +287,7 @@ export function useStore() {
   const addCollection = useCallback((name: string) => {
     setCollections((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), name: name.trim() || 'Collection', requests: [] },
+      { id: crypto.randomUUID(), name: name.trim() || 'Collection', requests: [], folders: [] },
     ]);
   }, []);
 
@@ -193,55 +300,100 @@ export function useStore() {
   }, []);
 
   const importWorkspace = useCallback((cols: Collection[], envs: Environment[]) => {
-    setCollections((prev) => [...prev, ...cols]);
+    setCollections((prev) => [...prev, ...cols.map(normalizeCollection)]);
     setEnvironments((prev) => [...prev, ...envs]);
     if (envs.length) setActiveEnvId(envs[0].id);
   }, []);
 
+  const addFolder = useCallback(
+    (collectionId: string, parentFolderId: string | null, name: string) => {
+      const folder: Folder = {
+        id: crypto.randomUUID(),
+        name: name.trim() || 'Folder',
+        requests: [],
+        folders: [],
+      };
+      setCollections((prev) =>
+        prev.map((c) => (c.id === collectionId ? addFolderTo(c, parentFolderId, folder) : c)),
+      );
+    },
+    [],
+  );
+
+  const renameFolder = useCallback((collectionId: string, folderId: string, name: string) => {
+    setCollections((prev) =>
+      prev.map((c) => (c.id === collectionId ? renameFolderIn(c, folderId, name) : c)),
+    );
+  }, []);
+
+  const deleteFolder = useCallback((collectionId: string, folderId: string) => {
+    setCollections((prev) =>
+      prev.map((c) => (c.id === collectionId ? deleteFolderIn(c, folderId) : c)),
+    );
+  }, []);
+
   const deleteSaved = useCallback((collectionId: string, requestId: string) => {
     setCollections((prev) =>
-      prev.map((c) =>
-        c.id === collectionId
-          ? { ...c, requests: c.requests.filter((r) => r.id !== requestId) }
-          : c,
-      ),
+      prev.map((c) => (c.id === collectionId ? removeRequest(c, requestId) : c)),
     );
   }, []);
 
   const duplicateSaved = useCallback((collectionId: string, requestId: string) => {
     setCollections((prev) =>
-      prev.map((c) => {
-        if (c.id !== collectionId) return c;
-        const idx = c.requests.findIndex((r) => r.id === requestId);
-        if (idx < 0) return c;
-        const src = c.requests[idx];
-        const copy: SavedRequest = {
-          id: crypto.randomUUID(),
-          name: `${src.name} (copy)`,
-          request: structuredClone(src.request),
-        };
-        const requests = [...c.requests];
-        requests.splice(idx + 1, 0, copy);
-        return { ...c, requests };
-      }),
+      prev.map((c) =>
+        c.id === collectionId
+          ? duplicateRequest(c, requestId, (src) => ({
+              id: crypto.randomUUID(),
+              name: `${src.name} (copy)`,
+              request: structuredClone(src.request),
+            }))
+          : c,
+      ),
     );
   }, []);
 
-  const moveSaved = useCallback(
-    (fromCollectionId: string, requestId: string, toCollectionId: string) => {
-      if (fromCollectionId === toCollectionId) return;
+  const moveSavedTo = useCallback(
+    (
+      fromCollectionId: string,
+      requestId: string,
+      toCollectionId: string,
+      toFolderId: string | null,
+    ) => {
       setCollections((prev) => {
         const src = prev.find((c) => c.id === fromCollectionId);
-        const moved = src?.requests.find((r) => r.id === requestId);
+        if (!src) return prev;
+        const moved = findRequest(src, requestId);
         if (!moved) return prev;
         return prev.map((c) => {
-          if (c.id === fromCollectionId) {
-            return { ...c, requests: c.requests.filter((r) => r.id !== requestId) };
-          }
-          if (c.id === toCollectionId) {
-            return { ...c, requests: [...c.requests, moved] };
-          }
-          return c;
+          let next = c;
+          if (c.id === fromCollectionId) next = removeRequest(next, requestId);
+          if (c.id === toCollectionId) next = insertRequest(next, toFolderId, moved);
+          return next;
+        });
+      });
+    },
+    [],
+  );
+
+  const moveFolderTo = useCallback(
+    (
+      fromCollectionId: string,
+      folderId: string,
+      toCollectionId: string,
+      toFolderId: string | null,
+    ) => {
+      if (folderId === toFolderId) return;
+      setCollections((prev) => {
+        const src = prev.find((c) => c.id === fromCollectionId);
+        if (!src) return prev;
+        const { folder } = extractFolder(src, folderId);
+        if (!folder) return prev;
+        if (toFolderId && folderContains(folder, toFolderId)) return prev;
+        return prev.map((c) => {
+          let next = c;
+          if (c.id === fromCollectionId) next = extractFolder(next, folderId).container;
+          if (c.id === toCollectionId) next = addFolderTo(next, toFolderId, folder);
+          return next;
         });
       });
     },
@@ -250,27 +402,20 @@ export function useStore() {
 
   /** Lưu tab hiện tại vào collection (tạo mới, cập nhật, hoặc di chuyển). */
   const saveTabToCollection = useCallback(
-    (tabId: string, collectionId: string, name: string) => {
+    (tabId: string, collectionId: string, folderId: string | null, name: string) => {
       const tab = tabs.find((t) => t.id === tabId);
       if (!tab) return;
       const request = structuredClone(tab.request);
       const savedId = tab.savedRequestId ?? null;
       const reuseId =
-        savedId &&
-        collections.some((c) => c.requests.some((r) => r.id === savedId))
-          ? savedId
-          : crypto.randomUUID();
+        savedId && collections.some((c) => findRequest(c, savedId)) ? savedId : crypto.randomUUID();
+      const saved: SavedRequest = { id: reuseId, name, request };
 
       setCollections((prev) =>
         prev.map((c) => {
-          const withoutOld = savedId
-            ? c.requests.filter((r) => r.id !== savedId)
-            : c.requests;
-          if (c.id !== collectionId) {
-            return withoutOld.length === c.requests.length ? c : { ...c, requests: withoutOld };
-          }
-          const saved: SavedRequest = { id: reuseId, name, request };
-          return { ...c, requests: [...withoutOld, saved] };
+          let next = savedId ? removeRequest(c, savedId) : c;
+          if (c.id === collectionId) next = insertRequest(next, folderId, saved);
+          return next;
         }),
       );
       patchTab(tabId, { name, savedRequestId: reuseId, dirty: false });
@@ -298,6 +443,60 @@ export function useStore() {
     setActiveEnvId((cur) => (cur === id ? null : cur));
   }, []);
 
+  const updateGlobals = useCallback((variables: KeyValue[]) => {
+    setGlobals(variables);
+  }, []);
+
+  const importDotenv = useCallback(
+    (
+      pairs: { key: string; value: string }[],
+      target: { mode: 'new' | 'merge'; envId?: string; name?: string },
+    ) => {
+      if (target.mode === 'new') {
+        const vars: KeyValue[] = pairs.map((p) => ({
+          id: crypto.randomUUID(),
+          enabled: true,
+          key: p.key,
+          value: p.value,
+        }));
+        const env: Environment = {
+          id: crypto.randomUUID(),
+          name: target.name?.trim() || '.env',
+          variables: vars.length
+            ? vars
+            : [{ id: crypto.randomUUID(), enabled: true, key: '', value: '' }],
+        };
+        setEnvironments((prev) => [...prev, env]);
+        setActiveEnvId(env.id);
+        return;
+      }
+      setEnvironments((prev) =>
+        prev.map((e) => {
+          if (e.id !== target.envId) return e;
+          const next = e.variables.filter((v) => v.key.trim());
+          for (const p of pairs) {
+            const idx = next.findIndex((v) => v.key.trim() === p.key);
+            if (idx >= 0) next[idx] = { ...next[idx], value: p.value };
+            else next.push({ id: crypto.randomUUID(), enabled: true, key: p.key, value: p.value });
+          }
+          return { ...e, variables: next };
+        }),
+      );
+      if (target.envId) setActiveEnvId(target.envId);
+    },
+    [],
+  );
+
+  const importEnvironment = useCallback((env: Environment) => {
+    const fresh: Environment = {
+      id: crypto.randomUUID(),
+      name: env.name || 'Environment',
+      variables: normalizeVars(env.variables),
+    };
+    setEnvironments((prev) => [...prev, fresh]);
+    setActiveEnvId(fresh.id);
+  }, []);
+
   /** Ghi các biến (từ script) vào environment đang chọn. */
   const applyVars = useCallback(
     (vars: Record<string, string>) => {
@@ -319,28 +518,31 @@ export function useStore() {
   );
 
   /* ---------- History ---------- */
-  const addHistory = useCallback((request: ApiRequest, response?: ApiResponse) => {
-    const entry: HistoryEntry = {
-      id: crypto.randomUUID(),
-      at: Date.now(),
-      method: request.method,
-      url: request.url,
-      status: response?.status,
-      durationMs: response?.durationMs,
-      response: response ? capResponse(response) : undefined,
-      request: structuredClone(request),
-    };
-    setHistory((prev) => {
-      const head = prev[0];
-      const dup =
-        head &&
-        head.method === entry.method &&
-        head.url === entry.url &&
-        head.request.body === entry.request.body;
-      const rest = dup ? prev.slice(1) : prev;
-      return [entry, ...rest].slice(0, MAX_HISTORY);
-    });
-  }, []);
+  const addHistory = useCallback(
+    (request: ApiRequest, response?: ApiResponse) => {
+      const entry: HistoryEntry = {
+        id: crypto.randomUUID(),
+        at: Date.now(),
+        method: request.method,
+        url: request.url,
+        status: response?.status,
+        durationMs: response?.durationMs,
+        response: response ? capResponse(response) : undefined,
+        request: structuredClone(request),
+      };
+      setHistory((prev) => {
+        const head = prev[0];
+        const dup =
+          head &&
+          head.method === entry.method &&
+          head.url === entry.url &&
+          head.request.body === entry.request.body;
+        const rest = dup ? prev.slice(1) : prev;
+        return [entry, ...rest].slice(0, Math.max(1, historyLimit));
+      });
+    },
+    [historyLimit],
+  );
 
   const deleteHistoryEntry = useCallback((id: string) => {
     setHistory((prev) => prev.filter((h) => h.id !== id));
@@ -348,11 +550,43 @@ export function useStore() {
 
   const clearHistory = useCallback(() => setHistory([]), []);
 
+  const addCookie = useCallback((cookie: Cookie) => {
+    setCookies((prev) => [...prev, cookie]);
+  }, []);
+
+  const updateCookie = useCallback((id: string, patch: Partial<Cookie>) => {
+    setCookies((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  }, []);
+
+  const deleteCookie = useCallback((id: string) => {
+    setCookies((prev) => prev.filter((c) => c.id !== id));
+  }, []);
+
+  const clearCookies = useCallback(() => setCookies([]), []);
+
+  const addMock = useCallback((mock: MockRule) => {
+    setMocks((prev) => [...prev, mock]);
+  }, []);
+
+  const updateMock = useCallback((id: string, patch: Partial<MockRule>) => {
+    setMocks((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+  }, []);
+
+  const deleteMock = useCallback((id: string) => {
+    setMocks((prev) => prev.filter((m) => m.id !== id));
+  }, []);
+
   const activeEnv = environments.find((e) => e.id === activeEnvId) ?? null;
 
   const replaceWorkspace = useCallback((cols: Collection[], envs: Environment[]) => {
-    setCollections(cols);
-    setEnvironments(envs);
+    setCollections(cols.map(normalizeCollection));
+    setEnvironments(envs.map((e) => ({ ...e, variables: normalizeVars(e.variables) })));
+  }, []);
+
+  const changeHistoryLimit = useCallback((limit: number) => {
+    const next = Math.max(1, Math.floor(limit) || DEFAULT_HISTORY_LIMIT);
+    setHistoryLimit(next);
+    setHistory((prev) => prev.slice(0, next));
   }, []);
 
   return {
@@ -375,11 +609,19 @@ export function useStore() {
     importWorkspace,
     deleteSaved,
     duplicateSaved,
-    moveSaved,
+    moveSavedTo,
+    moveFolderTo,
+    addFolder,
+    renameFolder,
+    deleteFolder,
     saveTabToCollection,
     replaceWorkspace,
     // environments
     environments,
+    globals,
+    updateGlobals,
+    importEnvironment,
+    importDotenv,
     activeEnv,
     activeEnvId,
     setActiveEnvId,
@@ -389,8 +631,23 @@ export function useStore() {
     applyVars,
     // history
     history,
+    historyLimit,
+    setHistoryLimit: changeHistoryLimit,
     addHistory,
     deleteHistoryEntry,
     clearHistory,
+    cookies,
+    cookieJarEnabled,
+    setCookieJarEnabled,
+    addCookie,
+    updateCookie,
+    deleteCookie,
+    clearCookies,
+    mocks,
+    mockMode,
+    setMockMode,
+    addMock,
+    updateMock,
+    deleteMock,
   };
 }

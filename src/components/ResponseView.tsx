@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { ApiResponse, RequestError } from '../types/request';
 import type { TestResult } from '../config/tests';
+import type { SchemaResult } from '../config/schema';
 import { diffValues, diffSummary } from '../config/diff';
 
 interface Props {
@@ -9,11 +10,12 @@ interface Props {
   prevResponse?: ApiResponse | null;
   error: RequestError | null;
   tests?: TestResult[];
+  schema?: SchemaResult;
   logs?: string[];
 }
 
 type BodyMode = 'pretty' | 'raw' | 'preview';
-type Tab = 'body' | 'headers' | 'cookies' | 'tests' | 'diff' | 'console';
+type Tab = 'body' | 'headers' | 'cookies' | 'tests' | 'schema' | 'diff' | 'console';
 
 function parseCookies(
   headers: Record<string, string>,
@@ -92,6 +94,7 @@ export default function ResponseView({
   prevResponse,
   error,
   tests,
+  schema,
   logs,
 }: Props) {
   const [tab, setTab] = useState<Tab>('body');
@@ -168,6 +171,11 @@ export default function ResponseView({
         <span className={`badge ${statusClass(response.status)}`}>
           {response.status} {response.statusText}
         </span>
+        {response.mocked && (
+          <span className="badge-mock" title="Response giả từ mock rule">
+            🎭 Mocked
+          </span>
+        )}
         <span className="meta-item">
           <b>{response.durationMs}</b> ms
         </span>
@@ -177,6 +185,11 @@ export default function ResponseView({
         {testCount > 0 && (
           <span className={`meta-tests ${testPass === testCount ? 'ok' : 'error'}`}>
             Tests {testPass}/{testCount}
+          </span>
+        )}
+        {schema && (
+          <span className={`meta-tests ${schema.ok ? 'ok' : 'error'}`}>
+            Schema {schema.ok ? 'OK' : `${schema.errors.length} lỗi`}
           </span>
         )}
       </div>
@@ -199,6 +212,14 @@ export default function ResponseView({
               Tests{' '}
               <span className={`pill ${testPass === testCount ? 'pill-ok' : 'pill-err'}`}>
                 {testPass}/{testCount}
+              </span>
+            </button>
+          )}
+          {schema && (
+            <button className={tab === 'schema' ? 'active' : ''} onClick={() => setTab('schema')}>
+              Schema{' '}
+              <span className={`pill ${schema.ok ? 'pill-ok' : 'pill-err'}`}>
+                {schema.ok ? '✓' : schema.errors.length}
               </span>
             </button>
           )}
@@ -293,6 +314,27 @@ export default function ResponseView({
           ))}
         </ul>
       )}
+
+      {tab === 'schema' &&
+        schema &&
+        (schema.ok ? (
+          <ul className="test-results">
+            <li className="tr-pass">
+              <span className="tr-icon">✓</span>
+              <span className="tr-name">Response hợp lệ theo JSON Schema</span>
+            </li>
+          </ul>
+        ) : (
+          <ul className="test-results">
+            {schema.errors.map((err, i) => (
+              <li key={i} className="tr-fail">
+                <span className="tr-icon">✕</span>
+                <span className="tr-name">{err.path}</span>
+                <span className="tr-msg">{err.message}</span>
+              </li>
+            ))}
+          </ul>
+        ))}
 
       {tab === 'console' && (
         <ul className="script-logs">

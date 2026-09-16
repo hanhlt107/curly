@@ -25,9 +25,7 @@ function queryPairs(req: ApiRequest): [string, string][] {
 function fullUrl(req: ApiRequest): string {
   const enabled = queryPairs(req);
   if (!enabled.length) return req.url;
-  const qs = enabled
-    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-    .join('&');
+  const qs = enabled.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
   return req.url.includes('?') ? `${req.url}&${qs}` : `${req.url}?${qs}`;
 }
 

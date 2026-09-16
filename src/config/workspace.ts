@@ -1,4 +1,11 @@
-import type { ApiRequest, Collection, Environment, KeyValue, SavedRequest } from '../types/request';
+import type {
+  ApiRequest,
+  Collection,
+  Environment,
+  Folder,
+  KeyValue,
+  SavedRequest,
+} from '../types/request';
 import { emptyAuth } from '../types/request';
 
 export interface WorkspaceExport {
@@ -7,6 +14,13 @@ export interface WorkspaceExport {
   exportedAt: number;
   collections: Collection[];
   environments: Environment[];
+}
+
+export function sanitizeEnv(env: Environment): Environment {
+  return {
+    ...env,
+    variables: env.variables.map((v) => (v.secret ? { ...v, value: '' } : v)),
+  };
 }
 
 export function buildExport(
@@ -18,7 +32,45 @@ export function buildExport(
     version: 1,
     exportedAt: Date.now(),
     collections,
-    environments,
+    environments: environments.map(sanitizeEnv),
+  };
+}
+
+export interface EnvironmentExport {
+  app: 'curly';
+  type: 'environment';
+  exportedAt: number;
+  environment: Environment;
+}
+
+export function buildEnvironmentExport(env: Environment): EnvironmentExport {
+  return {
+    app: 'curly',
+    type: 'environment',
+    exportedAt: Date.now(),
+    environment: sanitizeEnv(env),
+  };
+}
+
+export function parseEnvironment(json: string): Environment {
+  const data = JSON.parse(json);
+  const env =
+    data && typeof data === 'object' && data.type === 'environment' && data.environment
+      ? data.environment
+      : data;
+  if (!env || typeof env !== 'object' || !Array.isArray(env.variables)) {
+    throw new Error('File không phải environment hợp lệ.');
+  }
+  return {
+    id: crypto.randomUUID(),
+    name: typeof env.name === 'string' ? env.name : 'Environment',
+    variables: (env.variables as KeyValue[]).map((v) => ({
+      id: crypto.randomUUID(),
+      enabled: v.enabled ?? true,
+      key: v.key ?? '',
+      value: v.value ?? '',
+      ...(v.secret ? { secret: true as const } : {}),
+    })),
   };
 }
 
@@ -98,18 +150,36 @@ function requestToPostman(name: string, req: ApiRequest): PostmanItem {
   };
 }
 
+function folderToPostman(folder: Folder): PostmanItem {
+  return {
+    name: folder.name,
+    item: containerItemsToPostman(folder),
+  };
+}
+
+function containerItemsToPostman(container: {
+  requests: SavedRequest[];
+  folders: Folder[];
+}): PostmanItem[] {
+  return [
+    ...container.requests.map((r) => requestToPostman(r.name, r.request)),
+    ...container.folders.map(folderToPostman),
+  ];
+}
+
 export function buildPostmanExport(collection: Collection): unknown {
   return {
     info: {
       name: collection.name,
       schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
     },
-    item: collection.requests.map((r) => requestToPostman(r.name, r.request)),
+    item: containerItemsToPostman(collection),
   };
 }
 
 function normalizeRequest(r: Partial<ApiRequest>): ApiRequest {
   return {
+    protocol: r.protocol ?? 'http',
     method: r.method ?? 'GET',
     url: r.url ?? '',
     params: r.params?.length ? r.params : [row()],
@@ -120,9 +190,27 @@ function normalizeRequest(r: Partial<ApiRequest>): ApiRequest {
     graphqlVars: r.graphqlVars ?? '',
     auth: { ...emptyAuth(), ...r.auth },
     tests: r.tests ?? '',
+    responseSchema: r.responseSchema ?? '',
     preScript: r.preScript ?? '',
     postScript: r.postScript ?? '',
     autoToken: r.autoToken ?? true,
+  };
+}
+
+function cloneSaved(sr: SavedRequest): SavedRequest {
+  return {
+    id: crypto.randomUUID(),
+    name: sr.name ?? 'Request',
+    request: normalizeRequest(sr.request),
+  };
+}
+
+function cloneFolder(f: Folder): Folder {
+  return {
+    id: crypto.randomUUID(),
+    name: f?.name ?? 'Folder',
+    requests: Array.isArray(f?.requests) ? f.requests.map(cloneSaved) : [],
+    folders: Array.isArray(f?.folders) ? f.folders.map(cloneFolder) : [],
   };
 }
 
@@ -252,16 +340,27 @@ function postmanItemToSaved(item: PostmanItem): SavedRequest | null {
   return { id: crypto.randomUUID(), name: item.name ?? request.url ?? 'Request', request };
 }
 
-function flattenPostman(items: PostmanItem[]): SavedRequest[] {
-  const out: SavedRequest[] = [];
+function postmanItemsToContainer(items: PostmanItem[]): {
+  requests: SavedRequest[];
+  folders: Folder[];
+} {
+  const requests: SavedRequest[] = [];
+  const folders: Folder[] = [];
   for (const it of items) {
-    if (it.item) out.push(...flattenPostman(it.item));
-    else {
+    if (it.item) {
+      const inner = postmanItemsToContainer(it.item);
+      folders.push({
+        id: crypto.randomUUID(),
+        name: it.name ?? 'Folder',
+        requests: inner.requests,
+        folders: inner.folders,
+      });
+    } else {
       const saved = postmanItemToSaved(it);
-      if (saved) out.push(saved);
+      if (saved) requests.push(saved);
     }
   }
-  return out;
+  return { requests, folders };
 }
 
 function isCurlyExport(data: unknown): data is WorkspaceExport {
@@ -283,13 +382,10 @@ export function parseWorkspace(json: string): ImportResult {
   if (isCurlyExport(data)) {
     return {
       collections: (data.collections ?? []).map((c) => ({
-        ...c,
         id: crypto.randomUUID(),
-        requests: (c.requests ?? []).map((sr) => ({
-          id: crypto.randomUUID(),
-          name: sr.name,
-          request: normalizeRequest(sr.request),
-        })),
+        name: c.name ?? 'Collection',
+        requests: (c.requests ?? []).map(cloneSaved),
+        folders: (c.folders ?? []).map(cloneFolder),
       })),
       environments: (data.environments ?? []).map((e) => ({
         ...e,
@@ -301,10 +397,12 @@ export function parseWorkspace(json: string): ImportResult {
   if (isPostman(data)) {
     const info = (data as { info?: { name?: string } }).info;
     const items = (data as { item?: PostmanItem[] }).item ?? [];
+    const container = postmanItemsToContainer(items);
     const collection: Collection = {
       id: crypto.randomUUID(),
       name: info?.name ?? 'Imported Collection',
-      requests: flattenPostman(items),
+      requests: container.requests,
+      folders: container.folders,
     };
     return { collections: [collection], environments: [] };
   }

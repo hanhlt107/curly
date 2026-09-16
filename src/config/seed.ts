@@ -47,6 +47,17 @@ export function seedWorkspace(): { collections: Collection[]; environments: Envi
         tests: 'status === 201',
       }),
     ],
+    folders: [
+      {
+        id: crypto.randomUUID(),
+        name: 'Người dùng',
+        requests: [
+          saved('Danh sách người dùng', { method: 'GET', url: '{{baseUrl}}/users' }),
+          saved('Một người dùng', { method: 'GET', url: '{{baseUrl}}/users/1' }),
+        ],
+        folders: [],
+      },
+    ],
   };
 
   return { collections: [collection], environments: [env] };

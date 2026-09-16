@@ -1,5 +1,6 @@
 import axios, { AxiosError, type AxiosRequestConfig } from 'axios';
-import type { ApiRequest, ApiResponse, KeyValue, RequestError } from '../types/request';
+import type { ApiRequest, ApiResponse, Cookie, KeyValue, RequestError } from '../types/request';
+import { buildCookieHeader, matchCookies } from './cookies';
 
 const client = axios.create({
   timeout: 30000,
@@ -145,10 +146,17 @@ function toRawString(data: unknown): string {
 export async function sendRequest(
   req: ApiRequest,
   vars: Record<string, string> = {},
+  cookies: Cookie[] = [],
 ): Promise<ApiResponse> {
   const headers = toRecord(req.headers, vars);
   const params = toRecord(req.params, vars);
   applyAuth(req, headers, params, vars);
+
+  const url = resolveVars(req.url, vars).trim();
+  if (cookies.length && !headerHas(headers, 'cookie')) {
+    const matched = matchCookies(url, cookies);
+    if (matched.length) headers.Cookie = buildCookieHeader(matched);
+  }
 
   if (!headerHas(headers, 'content-type')) {
     if (req.bodyType === 'json' || req.bodyType === 'graphql') {
@@ -167,7 +175,7 @@ export async function sendRequest(
 
   const config: AxiosRequestConfig = {
     method: req.method,
-    url: resolveVars(req.url, vars).trim(),
+    url,
     params,
     headers,
     data,

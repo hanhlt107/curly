@@ -7,6 +7,10 @@ export interface Command {
   hint?: string;
   group: string;
   run: () => void;
+  method?: string;
+  url?: string;
+  path?: string;
+  haystack?: string;
 }
 
 interface Props {
@@ -20,11 +24,12 @@ export default function CommandPalette({ commands, onClose }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return commands;
-    return commands.filter(
-      (c) => c.label.toLowerCase().includes(q) || c.group.toLowerCase().includes(q),
-    );
+    const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!tokens.length) return commands;
+    return commands.filter((c) => {
+      const hay = `${c.label} ${c.group} ${c.haystack ?? ''}`.toLowerCase();
+      return tokens.every((t) => hay.includes(t));
+    });
   }, [commands, query]);
 
   useEffect(() => {
@@ -65,7 +70,7 @@ export default function CommandPalette({ commands, onClose }: Props) {
         <input
           className="cmd-input"
           autoFocus
-          placeholder="Nhảy tới request, environment, hoặc lệnh…"
+          placeholder="Tìm request (tên, URL, header, param, body), environment, hoặc lệnh…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKey}
@@ -75,13 +80,26 @@ export default function CommandPalette({ commands, onClose }: Props) {
           {filtered.map((c, i) => (
             <div
               key={c.id}
-              className={`cmd-item ${i === active ? 'active' : ''}`}
+              className={`cmd-item ${c.method ? 'gs-item' : ''} ${i === active ? 'active' : ''}`}
               onMouseEnter={() => setActive(i)}
               onClick={() => choose(i)}
             >
-              <span className="cmd-group">{c.group}</span>
-              <span className="cmd-label">{c.label}</span>
-              {c.hint && <span className="cmd-hint">{c.hint}</span>}
+              {c.method ? (
+                <>
+                  <span className="gs-method">{c.method}</span>
+                  <span className="gs-main">
+                    <span className="cmd-label">{c.label}</span>
+                    {c.url && <span className="gs-url">{c.url}</span>}
+                  </span>
+                  {c.path && <span className="gs-path">{c.path}</span>}
+                </>
+              ) : (
+                <>
+                  <span className="cmd-group">{c.group}</span>
+                  <span className="cmd-label">{c.label}</span>
+                  {c.hint && <span className="cmd-hint">{c.hint}</span>}
+                </>
+              )}
             </div>
           ))}
         </div>

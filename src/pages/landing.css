@@ -146,6 +146,17 @@
   background: var(--lp-panel);
 }
 
+.lp-nav-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lp-btn.ghost.sm {
+  padding: 8px 14px;
+  font-size: 0.85rem;
+}
+
 .lp-hero {
   max-width: 820px;
   margin: 0 auto;

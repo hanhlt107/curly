@@ -4,17 +4,37 @@ import ResponseView from './components/ResponseView';
 import Sidebar from './components/Sidebar';
 import TabBar from './components/TabBar';
 import AuthPanel from './components/AuthPanel';
-import EnvironmentBar from './components/EnvironmentBar';
+import EnvironmentModal from './components/EnvironmentModal';
+import SettingsMenu from './components/SettingsMenu';
 import MethodSelect from './components/MethodSelect';
+import ProtocolSelect from './components/ProtocolSelect';
 import CodeModal from './components/CodeModal';
 import CommandPalette, { type Command } from './components/CommandPalette';
 import { runTests, TEST_PLACEHOLDER, type TestResult } from './config/tests';
-import { buildExport, buildPostmanExport, parseWorkspace } from './config/workspace';
+import {
+  buildEnvironmentExport,
+  buildExport,
+  buildPostmanExport,
+  parseEnvironment,
+  parseWorkspace,
+} from './config/workspace';
+import { countRequests, findRequestFolderId, locateRequests } from './config/collections';
+import { parseOpenApiSpec } from './config/openapi';
 import { buildShareLink, readSharedRequest } from './config/share';
 import { toCurl } from './config/curl';
 import RunnerModal from './components/RunnerModal';
 import SaveModal from './components/SaveModal';
 import AuthModal from './components/AuthModal';
+import RealtimePanel from './components/RealtimePanel';
+import CookieJarModal from './components/CookieJarModal';
+import MockManagerModal from './components/MockManagerModal';
+import DocsModal from './components/DocsModal';
+import GraphQLPanel from './components/GraphQLPanel';
+import InstallButton from './components/InstallButton';
+import { useHotkeys } from './hooks/useHotkeys';
+import { useDialogs } from './hooks/useDialogs';
+import { matchMock, runMock } from './config/mocks';
+import { SCHEMA_PLACEHOLDER, validateSchema, type SchemaResult } from './config/schema';
 import { useAuth } from './hooks/useAuth';
 import { useCloudSync } from './hooks/useCloudSync';
 import { envToRecord, findUnresolvedVars, resolveVars, sendRequest } from './config/apiClient';
@@ -26,13 +46,34 @@ import {
   runPreScript,
 } from './config/script';
 import { useStore } from './hooks/useStore';
-import type { ApiResponse, Auth, BodyType, HttpMethod, RequestError } from './types/request';
+import type {
+  ApiResponse,
+  Auth,
+  BodyType,
+  HttpMethod,
+  KeyValue,
+  Protocol,
+  RequestError,
+} from './types/request';
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+const PROTOCOLS: { value: Protocol; label: string }[] = [
+  { value: 'http', label: 'HTTP' },
+  { value: 'ws', label: 'WS' },
+  { value: 'sse', label: 'SSE' },
+];
 type ReqTab = 'params' | 'auth' | 'headers' | 'body' | 'tests' | 'script';
+
+function kvText(list: KeyValue[]): string {
+  return list
+    .filter((v) => v.enabled)
+    .map((v) => `${v.key} ${v.value}`)
+    .join(' ');
+}
 
 export default function App() {
   const store = useStore();
+  const dialogs = useDialogs();
   const auth = useAuth();
   const sync = useCloudSync({
     userId: auth.user?.id ?? null,
@@ -45,14 +86,19 @@ export default function App() {
   const [reqTab, setReqTab] = useState<ReqTab>('params');
   const [saveOpen, setSaveOpen] = useState(false);
   const [codeOpen, setCodeOpen] = useState(false);
+  const [cookieOpen, setCookieOpen] = useState(false);
+  const [mockOpen, setMockOpen] = useState(false);
+  const [envModalOpen, setEnvModalOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [runnerId, setRunnerId] = useState<string | null>(null);
+  const [docsId, setDocsId] = useState<string | null>(null);
   const [showCurl, setShowCurl] = useState(false);
   const [shared, setShared] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>(
     () => (localStorage.getItem('curly:theme') as 'dark' | 'light') || 'dark',
   );
   const fileRef = useRef<HTMLInputElement>(null);
+  const urlRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -65,6 +111,7 @@ export default function App() {
     prevResponse?: ApiResponse | null;
     error: RequestError | null;
     tests?: TestResult[];
+    schema?: SchemaResult;
     logs?: string[];
   };
   const RESP_KEY = 'curly:responses:v1';
@@ -96,8 +143,11 @@ export default function App() {
   const state = respByTab[tab.id] ?? { loading: false, response: null, error: null };
 
   const vars = useMemo(
-    () => (store.activeEnv ? envToRecord(store.activeEnv.variables) : {}),
-    [store.activeEnv],
+    () => ({
+      ...envToRecord(store.globals),
+      ...(store.activeEnv ? envToRecord(store.activeEnv.variables) : {}),
+    }),
+    [store.globals, store.activeEnv],
   );
 
   const activeParams = req.params.filter((p) => p.enabled && p.key.trim()).length;
@@ -120,6 +170,7 @@ export default function App() {
       error: null,
       response: null,
       tests: undefined,
+      schema: undefined,
       logs: undefined,
     });
 
@@ -140,7 +191,12 @@ export default function App() {
     }
 
     try {
-      const res = await sendRequest(req, workVars);
+      const mockRule = store.mockMode ? matchMock(req, store.mocks, workVars) : null;
+      const res = mockRule
+        ? await runMock(mockRule, workVars)
+        : await sendRequest(req, workVars, store.cookieJarEnabled ? store.cookies : []);
+      if (mockRule)
+        logs.push(`🎭 mock: "${mockRule.name}" (${mockRule.method} ${mockRule.urlPattern})`);
       if (req.autoToken) {
         const auto = autoExtractToken(workVars, res);
         workVars = auto.vars;
@@ -154,11 +210,15 @@ export default function App() {
       }
       store.applyVars(workVars);
       const tests = req.tests.trim() ? runTests(req.tests, res) : undefined;
+      const schema = req.responseSchema.trim()
+        ? validateSchema(req.responseSchema, res.data)
+        : undefined;
       setState(tab.id, {
         loading: false,
         response: res,
         prevResponse,
         tests,
+        schema,
         logs: logs.length ? logs : undefined,
       });
       store.addHistory(req, res);
@@ -176,16 +236,35 @@ export default function App() {
   const urlHasVar = /\{\{[\w.-]+\}\}/.test(req.url);
   const unresolvedVars = useMemo(() => findUnresolvedVars(req, vars), [req, vars]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setPaletteOpen((o) => !o);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  const closeTabWithState = (id: string) => {
+    store.closeTab(id);
+    setRespByTab((prev) => {
+      const { [id]: _removed, ...rest } = prev;
+      return rest;
+    });
+  };
+
+  const stepTab = (delta: number) => {
+    const list = store.tabs;
+    if (list.length < 2) return;
+    const idx = list.findIndex((t) => t.id === store.activeTabId);
+    const next = (idx + delta + list.length) % list.length;
+    store.setActiveTabId(list[next].id);
+  };
+
+  useHotkeys({
+    onSend: () => {
+      if (req.protocol === 'http') send();
+    },
+    onSave: () => setSaveOpen(true),
+    onPalette: () => setPaletteOpen((o) => !o),
+    onNewTab: () => store.openTab(),
+    onCloseTab: () => closeTabWithState(store.activeTabId),
+    onNextTab: () => stepTab(1),
+    onPrevTab: () => stepTab(-1),
+    onToggleSidebar: () => setSidebarOpen((o) => !o),
+    onFocusUrl: () => urlRef.current?.focus(),
+  });
 
   useEffect(() => {
     const r = readSharedRequest();
@@ -255,7 +334,32 @@ export default function App() {
         const { collections, environments } = parseWorkspace(String(reader.result));
         store.importWorkspace(collections, environments);
       } catch (err) {
-        alert((err as Error).message || 'Không đọc được file.');
+        dialogs.toast((err as Error).message || 'Không đọc được file.', 'error');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const exportEnvironment = (id: string) => {
+    const env = store.environments.find((e) => e.id === id);
+    if (!env) return;
+    const slug = env.name.replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '') || 'environment';
+    downloadJson(buildEnvironmentExport(env), `${slug}.curly-env.json`);
+  };
+
+  const importOpenApiSpec = (text: string): number => {
+    const { collections, environments } = parseOpenApiSpec(text);
+    store.importWorkspace(collections, environments);
+    return collections.reduce((n, c) => n + countRequests(c), 0);
+  };
+
+  const importEnvironmentFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        store.importEnvironment(parseEnvironment(String(reader.result)));
+      } catch (err) {
+        dialogs.toast((err as Error).message || 'Không đọc được file.', 'error');
       }
     };
     reader.readAsText(file);
@@ -277,6 +381,24 @@ export default function App() {
         label: 'Import cURL / Code snippet',
         run: () => setCodeOpen(true),
       },
+      {
+        id: 'cookies',
+        group: 'Lệnh',
+        label: 'Cookie jar',
+        run: () => setCookieOpen(true),
+      },
+      {
+        id: 'mocks',
+        group: 'Lệnh',
+        label: 'Mock server',
+        run: () => setMockOpen(true),
+      },
+      {
+        id: 'mock-mode',
+        group: 'Lệnh',
+        label: store.mockMode ? 'Tắt Mock mode' : 'Bật Mock mode',
+        run: () => store.setMockMode((v) => !v),
+      },
       { id: 'export', group: 'Lệnh', label: 'Export workspace', run: exportWorkspace },
       {
         id: 'import',
@@ -292,15 +414,32 @@ export default function App() {
       },
     ];
     for (const c of store.collections) {
-      for (const r of c.requests) {
-        list.push({
-          id: `req-${r.id}`,
-          group: c.name,
-          label: r.name,
-          hint: r.request.method,
-          run: () => store.openSaved(r),
-        });
-      }
+      list.push({
+        id: `docs-${c.id}`,
+        group: c.name,
+        label: `📄 Tài liệu: ${c.name}`,
+        run: () => setDocsId(c.id),
+      });
+    }
+    for (const loc of locateRequests(store.collections)) {
+      const r = loc.saved.request;
+      const deep = [
+        kvText(r.params),
+        kvText(r.headers),
+        kvText(r.formData),
+        r.body,
+        r.graphqlVars,
+      ].join(' ');
+      list.push({
+        id: `req-${loc.saved.id}`,
+        group: loc.collectionName,
+        label: loc.saved.name,
+        method: r.method,
+        url: r.url,
+        path: loc.path,
+        haystack: `${r.url} ${loc.path} ${deep}`,
+        run: () => store.openSaved(loc.saved),
+      });
     }
     for (const e of store.environments) {
       list.push({
@@ -312,7 +451,7 @@ export default function App() {
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.collections, store.environments]);
+  }, [store.collections, store.environments, store.mockMode]);
 
   return (
     <div className="app">
@@ -335,34 +474,10 @@ export default function App() {
           />
           curly
         </h1>
-        <EnvironmentBar
-          environments={store.environments}
-          activeEnvId={store.activeEnvId}
-          onSelect={store.setActiveEnvId}
-          onAdd={store.addEnvironment}
-          onUpdate={store.updateEnvironment}
-          onDelete={store.deleteEnvironment}
-        />
         <div className="topbar-actions">
+          <InstallButton />
           <button className="ghost-btn sm" onClick={() => setPaletteOpen(true)} title="Ctrl/⌘ + K">
             <span className="kbd">⌘K</span> Tìm nhanh
-          </button>
-          <button
-            className="ghost-btn sm"
-            onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
-            title={theme === 'dark' ? 'Chuyển sang giao diện sáng' : 'Chuyển sang giao diện tối'}
-          >
-            {theme === 'dark' ? '☀' : '☾'}
-          </button>
-          <button className="ghost-btn sm" onClick={exportWorkspace} title="Export ra file JSON">
-            ↥ Export
-          </button>
-          <button
-            className="ghost-btn sm"
-            onClick={() => fileRef.current?.click()}
-            title="Import Curly / Postman"
-          >
-            ↧ Import
           </button>
           <input
             ref={fileRef}
@@ -375,22 +490,27 @@ export default function App() {
               e.target.value = '';
             }}
           />
-          {auth.enabled &&
-            (auth.user ? (
-              <div className="account">
-                <span className={`sync-dot ${sync.status}`} title={syncLabel} />
-                <span className="account-email" title={auth.user.email ?? undefined}>
-                  {auth.user.email}
-                </span>
-                <button className="ghost-btn sm" onClick={auth.signOut} title="Đăng xuất">
-                  Đăng xuất
-                </button>
-              </div>
-            ) : (
-              <button className="send-btn sm" onClick={() => setAuthOpen(true)}>
-                Đăng nhập
-              </button>
-            ))}
+          <SettingsMenu
+            theme={theme}
+            onToggleTheme={() => setTheme((v) => (v === 'dark' ? 'light' : 'dark'))}
+            cookiesCount={store.cookies.length}
+            onOpenCookies={() => setCookieOpen(true)}
+            mockMode={store.mockMode}
+            mocksCount={store.mocks.length}
+            onOpenMock={() => setMockOpen(true)}
+            onExport={exportWorkspace}
+            onImport={() => fileRef.current?.click()}
+            environments={store.environments}
+            activeEnvId={store.activeEnvId}
+            onSelectEnv={store.setActiveEnvId}
+            onManageEnv={() => setEnvModalOpen(true)}
+            authEnabled={auth.enabled}
+            authEmail={auth.user?.email ?? null}
+            syncStatus={sync.status}
+            syncLabel={syncLabel}
+            onSignIn={() => setAuthOpen(true)}
+            onSignOut={auth.signOut}
+          />
         </div>
       </header>
 
@@ -399,6 +519,8 @@ export default function App() {
         <Sidebar
           collections={store.collections}
           history={store.history}
+          historyLimit={store.historyLimit}
+          onChangeHistoryLimit={store.setHistoryLimit}
           onOpenSaved={(s) => {
             store.openSaved(s);
             setSidebarOpen(false);
@@ -419,11 +541,16 @@ export default function App() {
           onAddCollection={store.addCollection}
           onRenameCollection={store.renameCollection}
           onRunCollection={setRunnerId}
+          onDocsCollection={setDocsId}
           onExportCollection={exportCollectionAsPostman}
           onDeleteCollection={store.deleteCollection}
           onDeleteSaved={store.deleteSaved}
           onDuplicateSaved={store.duplicateSaved}
-          onMoveSaved={store.moveSaved}
+          onMoveSavedTo={store.moveSavedTo}
+          onMoveFolderTo={store.moveFolderTo}
+          onAddFolder={store.addFolder}
+          onRenameFolder={store.renameFolder}
+          onDeleteFolder={store.deleteFolder}
           onDeleteHistory={store.deleteHistoryEntry}
           onClearHistory={store.clearHistory}
         />
@@ -433,29 +560,37 @@ export default function App() {
             tabs={store.tabs}
             activeTabId={store.activeTabId}
             onSelect={store.setActiveTabId}
-            onClose={(id) => {
-              store.closeTab(id);
-              setRespByTab((prev) => {
-                const { [id]: _removed, ...rest } = prev;
-                return rest;
-              });
-            }}
+            onClose={closeTabWithState}
             onNew={() => store.openTab()}
           />
 
           <div className="url-bar">
-            <MethodSelect
-              methods={METHODS}
-              value={req.method}
-              onChange={(m) => store.updateActiveRequest({ method: m })}
+            <ProtocolSelect
+              protocols={PROTOCOLS}
+              value={req.protocol}
+              onChange={(protocol) => store.updateActiveRequest({ protocol })}
             />
+            {req.protocol === 'http' && (
+              <MethodSelect
+                methods={METHODS}
+                value={req.method}
+                onChange={(m) => store.updateActiveRequest({ method: m })}
+              />
+            )}
             <div className="url-wrap">
               <input
+                ref={urlRef}
                 className="url-input"
                 value={req.url}
-                placeholder="https://api.example.com/endpoint  hoặc  {{baseUrl}}/users"
+                placeholder={
+                  req.protocol === 'ws'
+                    ? 'wss://echo.websocket.org  hoặc  {{wsUrl}}'
+                    : req.protocol === 'sse'
+                      ? 'https://api.example.com/stream  hoặc  {{baseUrl}}/events'
+                      : 'https://api.example.com/endpoint  hoặc  {{baseUrl}}/users'
+                }
                 onChange={(e) => store.updateActiveRequest({ url: e.target.value })}
-                onKeyDown={(e) => e.key === 'Enter' && send()}
+                onKeyDown={(e) => e.key === 'Enter' && req.protocol === 'http' && send()}
               />
               {urlHasVar && resolvedUrl !== req.url && (
                 <span className="url-preview" title="URL sau khi thay biến">
@@ -463,9 +598,11 @@ export default function App() {
                 </span>
               )}
             </div>
-            <button className="send-btn" onClick={send} disabled={state.loading}>
-              {state.loading ? <span className="btn-spinner" /> : 'Send'}
-            </button>
+            {req.protocol === 'http' && (
+              <button className="send-btn" onClick={send} disabled={state.loading}>
+                {state.loading ? <span className="btn-spinner" /> : 'Send'}
+              </button>
+            )}
             <button
               className="save-btn"
               onClick={() => setSaveOpen(true)}
@@ -500,223 +637,303 @@ export default function App() {
             </div>
           )}
 
-          <div className={`curl-strip ${showCurl ? 'open' : ''}`}>
-            <button className="curl-toggle" onClick={() => setShowCurl((v) => !v)}>
-              <span className={`curl-caret ${showCurl ? 'open' : ''}`}>▶</span> cURL
-            </button>
-            {showCurl && (
-              <div className="curl-live">
-                <pre>{curlPreview}</pre>
-                <button className="copy-btn" onClick={copyCurl}>
-                  Copy
+          {req.protocol !== 'http' ? (
+            <RealtimePanel key={tab.id} protocol={req.protocol} url={req.url} vars={vars} />
+          ) : (
+            <>
+              <div className={`curl-strip ${showCurl ? 'open' : ''}`}>
+                <button className="curl-toggle" onClick={() => setShowCurl((v) => !v)}>
+                  <span className={`curl-caret ${showCurl ? 'open' : ''}`}>▶</span> cURL
+                </button>
+                {showCurl && (
+                  <div className="curl-live">
+                    <pre>{curlPreview}</pre>
+                    <button className="copy-btn" onClick={copyCurl}>
+                      Copy
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="req-tabs">
+                <button
+                  className={reqTab === 'params' ? 'active' : ''}
+                  onClick={() => setReqTab('params')}
+                >
+                  Params{activeParams ? <span className="pill">{activeParams}</span> : null}
+                </button>
+                <button
+                  className={reqTab === 'auth' ? 'active' : ''}
+                  onClick={() => setReqTab('auth')}
+                >
+                  Auth{req.auth.type !== 'none' ? <span className="pill dot-pill">●</span> : null}
+                </button>
+                <button
+                  className={reqTab === 'headers' ? 'active' : ''}
+                  onClick={() => setReqTab('headers')}
+                >
+                  Headers{activeHeaders ? <span className="pill">{activeHeaders}</span> : null}
+                </button>
+                <button
+                  className={reqTab === 'body' ? 'active' : ''}
+                  onClick={() => setReqTab('body')}
+                >
+                  Body{req.bodyType !== 'none' ? <span className="pill dot-pill">●</span> : null}
+                </button>
+                <button
+                  className={reqTab === 'tests' ? 'active' : ''}
+                  onClick={() => setReqTab('tests')}
+                >
+                  Tests{req.tests.trim() ? <span className="pill dot-pill">●</span> : null}
+                </button>
+                <button
+                  className={reqTab === 'script' ? 'active' : ''}
+                  onClick={() => setReqTab('script')}
+                >
+                  Script
+                  {req.preScript.trim() || req.postScript.trim() ? (
+                    <span className="pill dot-pill">●</span>
+                  ) : null}
                 </button>
               </div>
-            )}
-          </div>
 
-          <div className="req-tabs">
-            <button
-              className={reqTab === 'params' ? 'active' : ''}
-              onClick={() => setReqTab('params')}
-            >
-              Params{activeParams ? <span className="pill">{activeParams}</span> : null}
-            </button>
-            <button className={reqTab === 'auth' ? 'active' : ''} onClick={() => setReqTab('auth')}>
-              Auth{req.auth.type !== 'none' ? <span className="pill dot-pill">●</span> : null}
-            </button>
-            <button
-              className={reqTab === 'headers' ? 'active' : ''}
-              onClick={() => setReqTab('headers')}
-            >
-              Headers{activeHeaders ? <span className="pill">{activeHeaders}</span> : null}
-            </button>
-            <button className={reqTab === 'body' ? 'active' : ''} onClick={() => setReqTab('body')}>
-              Body{req.bodyType !== 'none' ? <span className="pill dot-pill">●</span> : null}
-            </button>
-            <button
-              className={reqTab === 'tests' ? 'active' : ''}
-              onClick={() => setReqTab('tests')}
-            >
-              Tests{req.tests.trim() ? <span className="pill dot-pill">●</span> : null}
-            </button>
-            <button
-              className={reqTab === 'script' ? 'active' : ''}
-              onClick={() => setReqTab('script')}
-            >
-              Script
-              {req.preScript.trim() || req.postScript.trim() ? (
-                <span className="pill dot-pill">●</span>
-              ) : null}
-            </button>
-          </div>
-
-          <div className="req-panel">
-            {reqTab === 'params' && (
-              <KeyValueEditor
-                items={req.params}
-                onChange={(params) => store.updateActiveRequest({ params })}
-                keyPlaceholder="Param"
-              />
-            )}
-            {reqTab === 'auth' && (
-              <AuthPanel
-                auth={req.auth}
-                onChange={(patch: Partial<Auth>) =>
-                  store.updateActiveRequest({ auth: { ...req.auth, ...patch } })
-                }
-                autoToken={req.autoToken ?? false}
-                onAutoTokenChange={(autoToken) => store.updateActiveRequest({ autoToken })}
-              />
-            )}
-            {reqTab === 'headers' && (
-              <KeyValueEditor
-                items={req.headers}
-                onChange={(headers) => store.updateActiveRequest({ headers })}
-                keyPlaceholder="Header"
-              />
-            )}
-            {reqTab === 'body' && (
-              <div className="body-panel">
-                <div className="body-types">
-                  {(
-                    [
-                      ['none', 'none'],
-                      ['json', 'JSON'],
-                      ['raw', 'Raw'],
-                      ['graphql', 'GraphQL'],
-                      ['form', 'Form-data'],
-                      ['urlencoded', 'URL-encoded'],
-                    ] as [BodyType, string][]
-                  ).map(([bt, label]) => (
-                    <label key={bt}>
-                      <input
-                        type="radio"
-                        name="bodyType"
-                        checked={req.bodyType === bt}
-                        onChange={() =>
-                          store.updateActiveRequest(
-                            bt === 'graphql' && req.method === 'GET'
-                              ? { bodyType: bt, method: 'POST' }
-                              : { bodyType: bt },
-                          )
-                        }
-                      />
-                      {label}
-                    </label>
-                  ))}
-                </div>
-
-                {(req.bodyType === 'json' || req.bodyType === 'raw') && (
-                  <textarea
-                    className="body-input"
-                    value={req.body}
-                    placeholder={req.bodyType === 'json' ? '{\n  "key": "value"\n}' : 'raw body'}
-                    onChange={(e) => store.updateActiveRequest({ body: e.target.value })}
-                    spellCheck={false}
-                  />
-                )}
-
-                {req.bodyType === 'graphql' && (
-                  <div className="gql-panel">
-                    <label className="field-label">Query</label>
-                    <textarea
-                      className="body-input gql-query"
-                      value={req.body}
-                      placeholder={'query {\n  users {\n    id\n    name\n  }\n}'}
-                      onChange={(e) => store.updateActiveRequest({ body: e.target.value })}
-                      spellCheck={false}
-                    />
-                    <label className="field-label">Variables (JSON)</label>
-                    <textarea
-                      className="body-input gql-vars"
-                      value={req.graphqlVars}
-                      placeholder={'{\n  "id": 1\n}'}
-                      onChange={(e) => store.updateActiveRequest({ graphqlVars: e.target.value })}
-                      spellCheck={false}
-                    />
-                  </div>
-                )}
-
-                {(req.bodyType === 'form' || req.bodyType === 'urlencoded') && (
+              <div className="req-panel">
+                {reqTab === 'params' && (
                   <KeyValueEditor
-                    items={req.formData}
-                    onChange={(formData) => store.updateActiveRequest({ formData })}
-                    keyPlaceholder="Field"
+                    items={req.params}
+                    onChange={(params) => store.updateActiveRequest({ params })}
+                    keyPlaceholder="Param"
                   />
                 )}
-              </div>
-            )}
-            {reqTab === 'tests' && (
-              <div className="tests-panel">
-                <div className="tests-hint">
-                  Mỗi dòng một assertion. Cú pháp: <code>status === 200</code>,{' '}
-                  <code>status &lt; 400</code>, <code>time &lt; 2000</code>,{' '}
-                  <code>body contains "id"</code>, <code>body matches /regex/</code>,{' '}
-                  <code>header content-type contains json</code>, <code>json data.id === 1</code>,{' '}
-                  <code>json data.count &gt; 0</code>
-                </div>
-                <textarea
-                  className="body-input tests-input"
-                  value={req.tests}
-                  placeholder={TEST_PLACEHOLDER}
-                  onChange={(e) => store.updateActiveRequest({ tests: e.target.value })}
-                  spellCheck={false}
-                />
-              </div>
-            )}
-            {reqTab === 'script' && (
-              <div className="script-panel">
-                {!store.activeEnv && (
-                  <div className="tests-hint">
-                    Chưa chọn Environment — biến <code>curly.set(...)</code> sẽ không được lưu.
+                {reqTab === 'auth' && (
+                  <AuthPanel
+                    auth={req.auth}
+                    onChange={(patch: Partial<Auth>) =>
+                      store.updateActiveRequest({ auth: { ...req.auth, ...patch } })
+                    }
+                    autoToken={req.autoToken ?? false}
+                    onAutoTokenChange={(autoToken) => store.updateActiveRequest({ autoToken })}
+                  />
+                )}
+                {reqTab === 'headers' && (
+                  <KeyValueEditor
+                    items={req.headers}
+                    onChange={(headers) => store.updateActiveRequest({ headers })}
+                    keyPlaceholder="Header"
+                  />
+                )}
+                {reqTab === 'body' && (
+                  <div className="body-panel">
+                    <div className="body-types">
+                      {(
+                        [
+                          ['none', 'none'],
+                          ['json', 'JSON'],
+                          ['raw', 'Raw'],
+                          ['graphql', 'GraphQL'],
+                          ['form', 'Form-data'],
+                          ['urlencoded', 'URL-encoded'],
+                        ] as [BodyType, string][]
+                      ).map(([bt, label]) => (
+                        <label key={bt}>
+                          <input
+                            type="radio"
+                            name="bodyType"
+                            checked={req.bodyType === bt}
+                            onChange={() =>
+                              store.updateActiveRequest(
+                                bt === 'graphql' && req.method === 'GET'
+                                  ? { bodyType: bt, method: 'POST' }
+                                  : { bodyType: bt },
+                              )
+                            }
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+
+                    {(req.bodyType === 'json' || req.bodyType === 'raw') && (
+                      <textarea
+                        className="body-input"
+                        value={req.body}
+                        placeholder={
+                          req.bodyType === 'json' ? '{\n  "key": "value"\n}' : 'raw body'
+                        }
+                        onChange={(e) => store.updateActiveRequest({ body: e.target.value })}
+                        spellCheck={false}
+                      />
+                    )}
+
+                    {req.bodyType === 'graphql' && (
+                      <GraphQLPanel
+                        req={req}
+                        vars={vars}
+                        cookies={store.cookieJarEnabled ? store.cookies : []}
+                        onBodyChange={(body) => store.updateActiveRequest({ body })}
+                        onVarsChange={(graphqlVars) => store.updateActiveRequest({ graphqlVars })}
+                      />
+                    )}
+
+                    {(req.bodyType === 'form' || req.bodyType === 'urlencoded') && (
+                      <KeyValueEditor
+                        items={req.formData}
+                        onChange={(formData) => store.updateActiveRequest({ formData })}
+                        keyPlaceholder="Field"
+                      />
+                    )}
                   </div>
                 )}
-                <label className="field-label">Pre-request (chạy trước khi gửi)</label>
-                <textarea
-                  className="body-input script-input"
-                  value={req.preScript}
-                  placeholder={SCRIPT_PLACEHOLDER}
-                  onChange={(e) => store.updateActiveRequest({ preScript: e.target.value })}
-                  spellCheck={false}
-                />
-                <label className="field-label">Post-response (chạy sau khi nhận)</label>
-                <textarea
-                  className="body-input script-input"
-                  value={req.postScript}
-                  placeholder={POST_SCRIPT_PLACEHOLDER}
-                  onChange={(e) => store.updateActiveRequest({ postScript: e.target.value })}
-                  spellCheck={false}
-                />
+                {reqTab === 'tests' && (
+                  <div className="tests-panel">
+                    <div className="tests-hint">
+                      Mỗi dòng một assertion. Cú pháp: <code>status === 200</code>,{' '}
+                      <code>status &lt; 400</code>, <code>time &lt; 2000</code>,{' '}
+                      <code>body contains "id"</code>, <code>body matches /regex/</code>,{' '}
+                      <code>header content-type contains json</code>,{' '}
+                      <code>json data.id === 1</code>, <code>json data.count &gt; 0</code>
+                    </div>
+                    <textarea
+                      className="body-input tests-input"
+                      value={req.tests}
+                      placeholder={TEST_PLACEHOLDER}
+                      onChange={(e) => store.updateActiveRequest({ tests: e.target.value })}
+                      spellCheck={false}
+                    />
+                    <label className="field-label">
+                      JSON Schema{' '}
+                      {req.responseSchema.trim() ? <span className="pill dot-pill">●</span> : null}
+                    </label>
+                    <div className="tests-hint">
+                      Kiểm tra response body theo JSON Schema. Hỗ trợ <code>type</code>,{' '}
+                      <code>required</code>, <code>properties</code>, <code>items</code>,{' '}
+                      <code>enum</code>, <code>minimum/maximum</code>,{' '}
+                      <code>minLength/maxLength</code>, <code>additionalProperties</code>.
+                    </div>
+                    <textarea
+                      className="body-input tests-input"
+                      value={req.responseSchema}
+                      placeholder={SCHEMA_PLACEHOLDER}
+                      onChange={(e) =>
+                        store.updateActiveRequest({ responseSchema: e.target.value })
+                      }
+                      spellCheck={false}
+                    />
+                  </div>
+                )}
+                {reqTab === 'script' && (
+                  <div className="script-panel">
+                    {!store.activeEnv && (
+                      <div className="tests-hint">
+                        Chưa chọn Environment — biến <code>curly.set(...)</code> sẽ không được lưu.
+                      </div>
+                    )}
+                    <label className="field-label">Pre-request (chạy trước khi gửi)</label>
+                    <textarea
+                      className="body-input script-input"
+                      value={req.preScript}
+                      placeholder={SCRIPT_PLACEHOLDER}
+                      onChange={(e) => store.updateActiveRequest({ preScript: e.target.value })}
+                      spellCheck={false}
+                    />
+                    <label className="field-label">Post-response (chạy sau khi nhận)</label>
+                    <textarea
+                      className="body-input script-input"
+                      value={req.postScript}
+                      placeholder={POST_SCRIPT_PLACEHOLDER}
+                      onChange={(e) => store.updateActiveRequest({ postScript: e.target.value })}
+                      spellCheck={false}
+                    />
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          <ResponseView
-            loading={state.loading}
-            response={state.response}
-            prevResponse={state.prevResponse ?? null}
-            error={state.error}
-            tests={state.tests}
-            logs={state.logs}
-          />
+              <ResponseView
+                loading={state.loading}
+                response={state.response}
+                prevResponse={state.prevResponse ?? null}
+                error={state.error}
+                tests={state.tests}
+                schema={state.schema}
+                logs={state.logs}
+              />
+            </>
+          )}
         </main>
       </div>
 
-      {saveOpen && (
-        <SaveModal
-          defaultName={tab.name === 'Request mới' ? req.url : tab.name}
-          collections={store.collections}
-          onCreateCollection={store.addCollection}
-          onSave={(cid, name) => store.saveTabToCollection(tab.id, cid, name)}
-          onClose={() => setSaveOpen(false)}
-        />
-      )}
+      {saveOpen &&
+        (() => {
+          const existingCol = tab.savedRequestId
+            ? store.collections.find(
+                (c) => findRequestFolderId(c, tab.savedRequestId!) !== undefined,
+              )
+            : undefined;
+          const existingFolderId = existingCol
+            ? (findRequestFolderId(existingCol, tab.savedRequestId!) ?? null)
+            : null;
+          return (
+            <SaveModal
+              defaultName={tab.name === 'Request mới' ? req.url : tab.name}
+              collections={store.collections}
+              defaultCollectionId={existingCol?.id ?? null}
+              defaultFolderId={existingFolderId}
+              onCreateCollection={store.addCollection}
+              onSave={(cid, folderId, name) =>
+                store.saveTabToCollection(tab.id, cid, folderId, name)
+              }
+              onClose={() => setSaveOpen(false)}
+            />
+          );
+        })()}
 
       {codeOpen && (
         <CodeModal
           request={req}
           onImport={(r) => store.openRequest(r, r.url || 'Imported')}
+          onImportSpec={importOpenApiSpec}
           onClose={() => setCodeOpen(false)}
+        />
+      )}
+
+      {cookieOpen && (
+        <CookieJarModal
+          cookies={store.cookies}
+          enabled={store.cookieJarEnabled}
+          onToggleEnabled={store.setCookieJarEnabled}
+          onAdd={store.addCookie}
+          onUpdate={store.updateCookie}
+          onDelete={store.deleteCookie}
+          onClearAll={store.clearCookies}
+          onClose={() => setCookieOpen(false)}
+        />
+      )}
+
+      {mockOpen && (
+        <MockManagerModal
+          mocks={store.mocks}
+          mockMode={store.mockMode}
+          onToggleMode={store.setMockMode}
+          onAdd={store.addMock}
+          onUpdate={store.updateMock}
+          onDelete={store.deleteMock}
+          onClose={() => setMockOpen(false)}
+        />
+      )}
+
+      {envModalOpen && (
+        <EnvironmentModal
+          environments={store.environments}
+          globals={store.globals}
+          activeEnvId={store.activeEnvId}
+          onAdd={store.addEnvironment}
+          onUpdate={store.updateEnvironment}
+          onDelete={store.deleteEnvironment}
+          onUpdateGlobals={store.updateGlobals}
+          onExportEnv={exportEnvironment}
+          onImportEnv={importEnvironmentFile}
+          onImportDotenv={store.importDotenv}
+          onClose={() => setEnvModalOpen(false)}
         />
       )}
 
@@ -735,6 +952,12 @@ export default function App() {
               onClose={() => setRunnerId(null)}
             />
           ) : null;
+        })()}
+
+      {docsId &&
+        (() => {
+          const col = store.collections.find((c) => c.id === docsId);
+          return col ? <DocsModal collection={col} onClose={() => setDocsId(null)} /> : null;
         })()}
     </div>
   );

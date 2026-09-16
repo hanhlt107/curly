@@ -2,6 +2,7 @@ import type { ApiRequest } from '../types/request';
 import { emptyAuth } from '../types/request';
 
 interface SharePayload {
+  pr?: string;
   m: string;
   u: string;
   p?: [string, string][];
@@ -12,6 +13,7 @@ interface SharePayload {
   fd?: [string, string][];
   a?: ApiRequest['auth'];
   t?: string;
+  rs?: string;
   pre?: string;
   post?: string;
   at?: boolean;
@@ -47,6 +49,7 @@ function unpairs(list?: [string, string][]): ApiRequest['params'] {
 
 export function encodeRequest(req: ApiRequest): string {
   const payload: SharePayload = { m: req.method, u: req.url };
+  if (req.protocol !== 'http') payload.pr = req.protocol;
   const p = pairs(req.params);
   const h = pairs(req.headers);
   const fd = pairs(req.formData);
@@ -58,6 +61,7 @@ export function encodeRequest(req: ApiRequest): string {
   if (fd.length) payload.fd = fd;
   if (req.auth.type !== 'none') payload.a = req.auth;
   if (req.tests.trim()) payload.t = req.tests;
+  if (req.responseSchema.trim()) payload.rs = req.responseSchema;
   if (req.preScript.trim()) payload.pre = req.preScript;
   if (req.postScript.trim()) payload.post = req.postScript;
   if (!req.autoToken) payload.at = false;
@@ -67,6 +71,7 @@ export function encodeRequest(req: ApiRequest): string {
 export function decodeRequest(encoded: string): ApiRequest {
   const payload = JSON.parse(fromBase64Url(encoded)) as SharePayload;
   return {
+    protocol: (payload.pr ?? 'http') as ApiRequest['protocol'],
     method: (payload.m ?? 'GET') as ApiRequest['method'],
     url: payload.u ?? '',
     params: unpairs(payload.p),
@@ -77,6 +82,7 @@ export function decodeRequest(encoded: string): ApiRequest {
     graphqlVars: payload.gv ?? '',
     auth: { ...emptyAuth(), ...payload.a },
     tests: payload.t ?? '',
+    responseSchema: payload.rs ?? '',
     preScript: payload.pre ?? '',
     postScript: payload.post ?? '',
     autoToken: payload.at ?? true,

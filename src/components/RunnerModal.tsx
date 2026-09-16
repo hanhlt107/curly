@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Collection } from '../types/request';
+import { collectRequests } from '../config/collections';
 import { sendRequest } from '../config/apiClient';
 import { runTests } from '../config/tests';
 import { autoExtractToken, runPostScript, runPreScript } from '../config/script';
@@ -38,8 +39,9 @@ interface RunLog {
 }
 
 export default function RunnerModal({ collection, vars, onApplyVars, onClose }: Props) {
+  const allRequests = useRef(collectRequests(collection)).current;
   const [rows, setRows] = useState<RunRow[]>(
-    collection.requests.map((r) => ({
+    allRequests.map((r) => ({
       id: r.id,
       name: r.name,
       method: r.request.method,
@@ -100,7 +102,7 @@ export default function RunnerModal({ collection, vars, onApplyVars, onClose }: 
       }
       if (dataset) runVars = { ...runVars, ...dataset[i] };
 
-      for (const saved of collection.requests) {
+      for (const saved of allRequests) {
         if (cancel.current) break;
         patch(saved.id, { status: 'running' });
         let failed = false;

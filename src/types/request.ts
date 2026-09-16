@@ -1,10 +1,13 @@
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
 
+export type Protocol = 'http' | 'ws' | 'sse';
+
 export interface KeyValue {
   id: string;
   enabled: boolean;
   key: string;
   value: string;
+  secret?: boolean;
 }
 
 export type BodyType = 'none' | 'json' | 'raw' | 'graphql' | 'form' | 'urlencoded';
@@ -35,6 +38,7 @@ export function emptyAuth(): Auth {
 }
 
 export interface ApiRequest {
+  protocol: Protocol;
   method: HttpMethod;
   url: string;
   params: KeyValue[];
@@ -45,6 +49,7 @@ export interface ApiRequest {
   graphqlVars: string;
   auth: Auth;
   tests: string;
+  responseSchema: string;
   preScript: string;
   postScript: string;
   autoToken: boolean;
@@ -53,6 +58,7 @@ export interface ApiRequest {
 export function blankRequest(): ApiRequest {
   const row = (): KeyValue => ({ id: crypto.randomUUID(), enabled: true, key: '', value: '' });
   return {
+    protocol: 'http',
     method: 'GET',
     url: '',
     params: [row()],
@@ -63,6 +69,7 @@ export function blankRequest(): ApiRequest {
     graphqlVars: '',
     auth: emptyAuth(),
     tests: '',
+    responseSchema: '',
     preScript: '',
     postScript: '',
     autoToken: true,
@@ -77,6 +84,21 @@ export interface ApiResponse {
   headers: Record<string, string>;
   data: unknown;
   raw: string;
+  mocked?: boolean;
+}
+
+export type MockMethod = HttpMethod | 'ANY';
+
+export interface MockRule {
+  id: string;
+  enabled: boolean;
+  name: string;
+  method: MockMethod;
+  urlPattern: string;
+  status: number;
+  headers: KeyValue[];
+  body: string;
+  delayMs: number;
 }
 
 export interface RequestError {
@@ -91,10 +113,18 @@ export interface SavedRequest {
   request: ApiRequest;
 }
 
+export interface Folder {
+  id: string;
+  name: string;
+  requests: SavedRequest[];
+  folders: Folder[];
+}
+
 export interface Collection {
   id: string;
   name: string;
   requests: SavedRequest[];
+  folders: Folder[];
 }
 
 /** Một tab đang mở trong workspace. */
@@ -110,6 +140,17 @@ export interface Environment {
   id: string;
   name: string;
   variables: KeyValue[];
+}
+
+export interface Cookie {
+  id: string;
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  secure: boolean;
+  httpOnly: boolean;
+  enabled: boolean;
 }
 
 export interface HistoryEntry {

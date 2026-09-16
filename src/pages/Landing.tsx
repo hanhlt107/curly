@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import InstallButton from '../components/InstallButton';
 import './landing.css';
 
 const FEATURES: { icon: string; title: string; desc: string }[] = [
@@ -86,9 +87,12 @@ export default function Landing() {
           alt="curly"
           height={30}
         />
-        <Link className="lp-nav-cta" to="/app">
-          Mở ứng dụng
-        </Link>
+        <div className="lp-nav-right">
+          <InstallButton className="lp-btn ghost sm" />
+          <Link className="lp-nav-cta" to="/app">
+            Mở ứng dụng
+          </Link>
+        </div>
       </header>
 
       <section className="lp-hero">
@@ -207,7 +211,7 @@ export default function Landing() {
           <span>© {new Date().getFullYear()} curly · MIT</span>
           <span className="lp-status">
             <i className="lp-status-dot" />
-            Miễn phí &amp; mã nguồn mở
+            Miễn phí & mã nguồn mở
           </span>
         </div>
       </footer>

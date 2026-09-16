@@ -1,23 +1,40 @@
-import { useEffect, useState } from 'react';
-import type { Collection } from '../types/request';
+import { useEffect, useMemo, useState } from 'react';
+import type { Collection, Folder } from '../types/request';
 
 interface Props {
   defaultName: string;
   collections: Collection[];
+  defaultCollectionId?: string | null;
+  defaultFolderId?: string | null;
   onCreateCollection: (name: string) => void;
-  onSave: (collectionId: string, name: string) => void;
+  onSave: (collectionId: string, folderId: string | null, name: string) => void;
   onClose: () => void;
+}
+
+function folderOptions(collection: Collection): { id: string | null; label: string }[] {
+  const out: { id: string | null; label: string }[] = [{ id: null, label: '(gốc collection)' }];
+  const walk = (folders: Folder[], prefix: string) => {
+    for (const f of folders) {
+      out.push({ id: f.id, label: `${prefix}${f.name}` });
+      walk(f.folders, `${prefix}${f.name} / `);
+    }
+  };
+  walk(collection.folders, '');
+  return out;
 }
 
 export default function SaveModal({
   defaultName,
   collections,
+  defaultCollectionId,
+  defaultFolderId,
   onCreateCollection,
   onSave,
   onClose,
 }: Props) {
   const [name, setName] = useState(defaultName || 'Request mới');
-  const [collectionId, setCollectionId] = useState(collections[0]?.id ?? '');
+  const [collectionId, setCollectionId] = useState(defaultCollectionId ?? collections[0]?.id ?? '');
+  const [folderId, setFolderId] = useState<string | null>(defaultFolderId ?? null);
 
   useEffect(() => {
     const stillExists = collections.some((c) => c.id === collectionId);
@@ -26,13 +43,23 @@ export default function SaveModal({
     }
   }, [collections, collectionId]);
 
+  const currentCollection = collections.find((c) => c.id === collectionId) ?? null;
+  const folders = useMemo(
+    () => (currentCollection ? folderOptions(currentCollection) : []),
+    [currentCollection],
+  );
+
+  useEffect(() => {
+    if (folderId && !folders.some((f) => f.id === folderId)) setFolderId(null);
+  }, [folders, folderId]);
+
   const create = () => {
     onCreateCollection(`Collection ${collections.length + 1}`);
   };
 
   const save = () => {
     if (!collectionId) return;
-    onSave(collectionId, name.trim() || 'Request mới');
+    onSave(collectionId, folderId, name.trim() || 'Request mới');
     onClose();
   };
 
@@ -80,6 +107,23 @@ export default function SaveModal({
                 + Mới
               </button>
             </div>
+          )}
+
+          {currentCollection && folders.length > 1 && (
+            <>
+              <label className="field-label">Thư mục</label>
+              <select
+                className="field"
+                value={folderId ?? ''}
+                onChange={(e) => setFolderId(e.target.value || null)}
+              >
+                {folders.map((f) => (
+                  <option key={f.id ?? 'root'} value={f.id ?? ''}>
+                    {f.label}
+                  </option>
+                ))}
+              </select>
+            </>
           )}
         </div>
         <div className="modal-foot">
