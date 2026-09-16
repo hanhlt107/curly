@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import Button from './Button';
 import type { Collection, Folder } from '../types/request';
+import { MAX_COLLECTIONS } from '../hooks/useStore';
+import { useDialogs } from '../hooks/useDialogs';
 
 interface Props {
   defaultName: string;
@@ -33,6 +35,7 @@ export default function SaveModal({
   onSave,
   onClose,
 }: Props) {
+  const { toast } = useDialogs();
   const [name, setName] = useState(defaultName || 'Request mới');
   const [collectionId, setCollectionId] = useState(defaultCollectionId ?? collections[0]?.id ?? '');
   const [folderId, setFolderId] = useState<string | null>(defaultFolderId ?? null);
@@ -54,7 +57,13 @@ export default function SaveModal({
     if (folderId && !folders.some((f) => f.id === folderId)) setFolderId(null);
   }, [folders, folderId]);
 
+  const atLimit = collections.length >= MAX_COLLECTIONS;
+
   const create = () => {
+    if (atLimit) {
+      toast(`Chỉ được tạo tối đa ${MAX_COLLECTIONS} collection`, 'error');
+      return;
+    }
     onCreateCollection(`Collection ${collections.length + 1}`);
   };
 
@@ -104,7 +113,12 @@ export default function SaveModal({
                   </option>
                 ))}
               </select>
-              <Button onClick={create}>+ Mới</Button>
+              <Button
+                onClick={create}
+                title={atLimit ? `Tối đa ${MAX_COLLECTIONS} collection` : undefined}
+              >
+                + Mới
+              </Button>
             </div>
           )}
 

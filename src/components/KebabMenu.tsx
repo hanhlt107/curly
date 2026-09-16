@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -18,23 +18,43 @@ interface Props {
   align?: 'left' | 'right';
 }
 
+interface Pos {
+  top?: number;
+  bottom?: number;
+  left?: number;
+  right?: number;
+  maxHeight: number;
+}
+
+const MARGIN = 8;
+const GAP = 6;
+
 export default function KebabMenu({ items, title, className = '', align = 'right' }: Props) {
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ top: number; left?: number; right?: number } | null>(null);
+  const [pos, setPos] = useState<Pos | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
 
-  const place = () => {
+  const place = useCallback(() => {
     const el = btnRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    setPos(
-      align === 'right'
-        ? { top: r.bottom + 6, right: window.innerWidth - r.right }
-        : { top: r.bottom + 6, left: r.left },
-    );
-  };
+    const horiz = align === 'right' ? { right: window.innerWidth - r.right } : { left: r.left };
+    const spaceBelow = window.innerHeight - r.bottom - MARGIN;
+    const spaceAbove = r.top - MARGIN;
+    const needed = panelRef.current?.scrollHeight ?? 0;
+    const openUp = spaceBelow < Math.min(needed, 260) && spaceAbove > spaceBelow;
+    if (openUp) {
+      setPos({ bottom: window.innerHeight - r.top + GAP, maxHeight: spaceAbove, ...horiz });
+    } else {
+      setPos({ top: r.bottom + GAP, maxHeight: spaceBelow, ...horiz });
+    }
+  }, [align]);
+
+  useLayoutEffect(() => {
+    if (open) place();
+  }, [open, place]);
 
   useEffect(() => {
     if (!open) return;
@@ -46,7 +66,10 @@ export default function KebabMenu({ items, title, className = '', align = 'right
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
     };
-    const onScroll = () => setOpen(false);
+    const onScroll = (e: Event) => {
+      if (panelRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', onDoc);
     document.addEventListener('keydown', onKey);
     window.addEventListener('scroll', onScroll, true);
@@ -64,7 +87,6 @@ export default function KebabMenu({ items, title, className = '', align = 'right
 
   const toggle = (e: ReactMouseEvent) => {
     e.stopPropagation();
-    if (!open) place();
     setOpen((o) => !o);
   };
 
@@ -82,13 +104,20 @@ export default function KebabMenu({ items, title, className = '', align = 'right
         ⋮
       </button>
       {open &&
-        pos &&
         createPortal(
           <div
             ref={panelRef}
             className="kebab-panel"
             role="menu"
-            style={{ position: 'fixed', top: pos.top, left: pos.left, right: pos.right }}
+            style={{
+              position: 'fixed',
+              top: pos?.top,
+              bottom: pos?.bottom,
+              left: pos?.left,
+              right: pos?.right,
+              maxHeight: pos?.maxHeight,
+              visibility: pos ? 'visible' : 'hidden',
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             {visible.map((it, i) => (

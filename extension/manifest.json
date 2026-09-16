@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "curly — Kiểm thử REST API",
+  "short_name": "curly",
+  "version": "0.1.0",
+  "description": "Gửi request, quản lý collection, biến môi trường và chạy test ngay trong trình duyệt. Chạy dạng extension nên không bị chặn CORS.",
+  "action": {
+    "default_title": "Mở curly",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "host_permissions": ["<all_urls>"]
+}

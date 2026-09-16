@@ -1,8 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import type { Collection, Folder, HistoryEntry, SavedRequest } from '../types/request';
-import { countRequests, folderContains, moveTargets } from '../config/collections';
+import { countRequests, folderContains } from '../config/collections';
 import { useDialogs } from '../hooks/useDialogs';
-import KebabMenu, { type KebabItem } from './KebabMenu';
+import { MAX_COLLECTIONS } from '../hooks/useStore';
+import KebabMenu from './KebabMenu';
+
+type Drag =
+  | { type: 'request'; fromCollectionId: string; id: string; label: string }
+  | { type: 'folder'; fromCollectionId: string; id: string; label: string; node: Folder };
 
 interface Props {
   collections: Collection[];
@@ -85,15 +90,39 @@ export default function Sidebar({
   onDeleteHistory,
   onClearHistory,
 }: Props) {
-  const { confirm, prompt } = useDialogs();
+  const { confirm, prompt, toast } = useDialogs();
   const [view, setView] = useState<'collections' | 'history'>('collections');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [historyQuery, setHistoryQuery] = useState('');
   const [methodFilter, setMethodFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<StatusClass>('all');
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
 
-  const targets = useMemo(() => moveTargets(collections), [collections]);
+  const canDrop = (toFolderId: string | null): boolean => {
+    if (!drag) return false;
+    if (drag.type === 'folder') {
+      if (toFolderId === drag.id) return false;
+      if (toFolderId != null && folderContains(drag.node, toFolderId)) return false;
+    }
+    return true;
+  };
+
+  const doDrop = (toCollectionId: string, toFolderId: string | null) => {
+    if (!drag || !canDrop(toFolderId)) {
+      setDrag(null);
+      setOverId(null);
+      return;
+    }
+    if (drag.type === 'request') {
+      onMoveSavedTo(drag.fromCollectionId, drag.id, toCollectionId, toFolderId);
+    } else {
+      onMoveFolderTo(drag.fromCollectionId, drag.id, toCollectionId, toFolderId);
+    }
+    setDrag(null);
+    setOverId(null);
+  };
 
   const q = historyQuery.trim().toLowerCase();
   const filteredHistory = history.filter((h) => {
@@ -112,6 +141,10 @@ export default function Sidebar({
   const toggle = (id: string) => setExpanded((p) => ({ ...p, [id]: !p[id] }));
 
   const promptNew = () => {
+    if (collections.length >= MAX_COLLECTIONS) {
+      toast(`Chỉ được tạo tối đa ${MAX_COLLECTIONS} collection`, 'error');
+      return;
+    }
     onAddCollection(`Collection ${collections.length + 1}`);
   };
 
@@ -133,23 +166,22 @@ export default function Sidebar({
     />
   );
 
-  const moveItems = (
-    onPick: (toCollectionId: string, toFolderId: string | null) => void,
-    exclude?: (t: { collectionId: string; folderId: string | null }) => boolean,
-  ): KebabItem[] =>
-    targets
-      .filter((t) => !exclude || !exclude(t))
-      .map((t) => ({
-        icon: '→',
-        label: `Chuyển tới ${t.label}`,
-        onClick: () => onPick(t.collectionId, t.folderId),
-      }));
-
   const renderRequest = (collectionId: string, r: SavedRequest, depth: number) => (
     <li
       key={r.id}
-      className="tree-req"
+      className={`tree-req ${drag?.type === 'request' && drag.id === r.id ? 'dragging' : ''}`}
       style={{ paddingLeft: 10 + depth * 12 }}
+      draggable
+      onDragStart={(e) => {
+        e.stopPropagation();
+        setDrag({ type: 'request', fromCollectionId: collectionId, id: r.id, label: r.name });
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', r.name);
+      }}
+      onDragEnd={() => {
+        setDrag(null);
+        setOverId(null);
+      }}
       onClick={() => onOpenSaved(r)}
     >
       <span className={`m-tag m-${r.request.method}`}>{METHOD_SHORT[r.request.method]}</span>
@@ -165,7 +197,6 @@ export default function Sidebar({
             label: 'Nhân bản request',
             onClick: () => onDuplicateSaved(collectionId, r.id),
           },
-          ...moveItems((cid, fid) => onMoveSavedTo(collectionId, r.id, cid, fid)),
           {
             icon: '×',
             label: 'Xóa request',
@@ -189,11 +220,47 @@ export default function Sidebar({
 
   const renderFolder = (collectionId: string, f: Folder, depth: number) => {
     const isEmpty = f.requests.length === 0 && f.folders.length === 0;
+    const folKey = `fol:${collectionId}:${f.id}`;
     return (
       <li key={f.id} className="tree-folder">
         <div
-          className="tree-folder-head"
+          className={`tree-folder-head ${overId === folKey ? 'drop-over' : ''} ${
+            drag?.type === 'folder' && drag.id === f.id ? 'dragging' : ''
+          }`}
           style={{ paddingLeft: 8 + depth * 12 }}
+          draggable={renamingId !== f.id}
+          onDragStart={(e) => {
+            e.stopPropagation();
+            setDrag({
+              type: 'folder',
+              fromCollectionId: collectionId,
+              id: f.id,
+              label: f.name,
+              node: f,
+            });
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', f.name);
+          }}
+          onDragEnd={() => {
+            setDrag(null);
+            setOverId(null);
+          }}
+          onDragOver={(e) => {
+            if (!canDrop(f.id)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            setOverId(folKey);
+          }}
+          onDragLeave={(e) => {
+            e.stopPropagation();
+            setOverId((o) => (o === folKey ? null : o));
+          }}
+          onDrop={(e) => {
+            if (!canDrop(f.id)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            doDrop(collectionId, f.id);
+          }}
           onClick={() => toggle(f.id)}
         >
           <span className={`caret ${expanded[f.id] ? 'open' : ''}`}>▸</span>
@@ -233,14 +300,6 @@ export default function Sidebar({
                     }
                   })(),
               },
-              ...moveItems(
-                (cid, fid) => onMoveFolderTo(collectionId, f.id, cid, fid),
-                (t) =>
-                  (t.collectionId === collectionId && t.folderId === f.id) ||
-                  (t.collectionId === collectionId &&
-                    t.folderId != null &&
-                    folderContains(f, t.folderId)),
-              ),
               {
                 icon: '×',
                 label: 'Xóa thư mục',
@@ -288,8 +347,18 @@ export default function Sidebar({
       {view === 'collections' ? (
         <div className="side-body">
           <div className="side-head">
-            <span>{collections.length} collection</span>
-            <button className="icon-btn" onClick={promptNew} title="Tạo collection">
+            <span>
+              {collections.length}/{MAX_COLLECTIONS} collection
+            </span>
+            <button
+              className="icon-btn"
+              onClick={promptNew}
+              title={
+                collections.length >= MAX_COLLECTIONS
+                  ? `Tối đa ${MAX_COLLECTIONS} collection`
+                  : 'Tạo collection'
+              }
+            >
               +
             </button>
           </div>
@@ -299,7 +368,21 @@ export default function Sidebar({
           <ul className="tree">
             {collections.map((c) => (
               <li key={c.id} className="tree-col">
-                <div className="tree-col-head" onClick={() => toggle(c.id)}>
+                <div
+                  className={`tree-col-head ${overId === `col:${c.id}` ? 'drop-over' : ''}`}
+                  onDragOver={(e) => {
+                    if (!canDrop(null)) return;
+                    e.preventDefault();
+                    setOverId(`col:${c.id}`);
+                  }}
+                  onDragLeave={() => setOverId((o) => (o === `col:${c.id}` ? null : o))}
+                  onDrop={(e) => {
+                    if (!canDrop(null)) return;
+                    e.preventDefault();
+                    doDrop(c.id, null);
+                  }}
+                  onClick={() => toggle(c.id)}
+                >
                   <span className={`caret ${expanded[c.id] ? 'open' : ''}`}>▸</span>
                   {renamingId === c.id ? (
                     renameField(c.name, (v) => onRenameCollection(c.id, v))

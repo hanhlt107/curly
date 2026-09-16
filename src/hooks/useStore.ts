@@ -36,6 +36,7 @@ export { blankRequest };
 
 const KEY = 'curly:state:v1';
 const MAX_RESPONSE_CHARS = 100_000;
+export const MAX_COLLECTIONS = 20;
 
 function capResponse(res: ApiResponse): ApiResponse {
   if (res.raw.length <= MAX_RESPONSE_CHARS) return res;
@@ -351,10 +352,13 @@ export function useStore() {
 
   /* ---------- Collections ---------- */
   const addCollection = useCallback((name: string) => {
-    setCollections((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), name: name.trim() || 'Collection', requests: [], folders: [] },
-    ]);
+    setCollections((prev) => {
+      if (prev.length >= MAX_COLLECTIONS) return prev;
+      return [
+        ...prev,
+        { id: crypto.randomUUID(), name: name.trim() || 'Collection', requests: [], folders: [] },
+      ];
+    });
   }, []);
 
   const renameCollection = useCallback((id: string, name: string) => {

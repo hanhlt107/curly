@@ -57,6 +57,15 @@ function runScript(
   const logs: string[] = [];
   if (!code.trim()) return { vars, logs };
 
+  if (typeof window !== 'undefined' && window.location.protocol === 'chrome-extension:') {
+    return {
+      vars,
+      logs,
+      error:
+        'Chrome chặn chạy script tùy chỉnh trong extension (chính sách MV3). Hãy mở bản web để dùng pre/post script.',
+    };
+  }
+
   const { api, out } = buildApi(vars, logs, response);
   const console = {
     log: (...args: unknown[]) =>

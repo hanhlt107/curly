@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { BrowserRouter, HashRouter, Route, Routes, useLocation } from 'react-router-dom';
 import Landing from './pages/Landing';
 import PwaPrompt from './components/PwaPrompt';
 import RouteLoading from './components/RouteLoading';
@@ -10,7 +10,9 @@ import './styles.css';
 
 const App = lazy(() => import('./App'));
 
-const basename = import.meta.env.BASE_URL.replace(/\/$/, '');
+const isExtension = window.location.protocol === 'chrome-extension:';
+const Router = isExtension ? HashRouter : BrowserRouter;
+const basename = isExtension ? undefined : import.meta.env.BASE_URL.replace(/\/$/, '');
 
 function AnalyticsTracker() {
   const location = useLocation();
@@ -23,7 +25,7 @@ function AnalyticsTracker() {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter basename={basename}>
+    <Router basename={basename}>
       <AnalyticsTracker />
       <Routes>
         <Route path="/" element={<Landing />} />
@@ -38,7 +40,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           }
         />
       </Routes>
-    </BrowserRouter>
-    {import.meta.env.PROD && <PwaPrompt />}
+    </Router>
+    {import.meta.env.PROD && !isExtension && <PwaPrompt />}
   </React.StrictMode>,
 );
