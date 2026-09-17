@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import Button from './Button';
 import type { Collection, HistoryEntry } from '../types/request';
 import { buildDocsHtml, buildDocsMarkdown } from '../config/docs';
+import { downloadText, slugify } from '../config/download';
 
 interface Props {
   collection: Collection;
@@ -10,23 +11,10 @@ interface Props {
   onClose: () => void;
 }
 
-function download(content: string, filename: string, mime: string) {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 export default function DocsModal({ collection, history = [], onClose }: Props) {
   const [copied, setCopied] = useState(false);
   const markdown = useMemo(() => buildDocsMarkdown(collection, history), [collection, history]);
-  const slug = useMemo(
-    () => collection.name.replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '') || 'collection',
-    [collection.name],
-  );
+  const slug = useMemo(() => slugify(collection.name, 'collection'), [collection.name]);
 
   const copy = () => {
     navigator.clipboard?.writeText(markdown);
@@ -50,12 +38,12 @@ export default function DocsModal({ collection, history = [], onClose }: Props) 
 
         <div className="modal-foot cookie-foot">
           <Button onClick={copy}>{copied ? '✓ Đã copy' : 'Copy Markdown'}</Button>
-          <Button onClick={() => download(markdown, `${slug}.md`, 'text/markdown')}>
+          <Button onClick={() => downloadText(markdown, `${slug}.md`, 'text/markdown')}>
             ↧ Tải .md
           </Button>
           <Button
             onClick={() =>
-              download(buildDocsHtml(collection, history), `${slug}.html`, 'text/html')
+              downloadText(buildDocsHtml(collection, history), `${slug}.html`, 'text/html')
             }
           >
             ↧ Tải .html

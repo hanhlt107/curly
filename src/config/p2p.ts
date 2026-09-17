@@ -1,4 +1,4 @@
-import type { Collection, Environment, KeyValue } from '../types/request';
+import type { ApiRequest, Collection, Environment, KeyValue } from '../types/request';
 import { buildExport, type WorkspaceExport } from './workspace';
 
 export interface SharedWorkspace extends WorkspaceExport {
@@ -147,5 +147,64 @@ export function createChannelReceiver(onComplete: (payload: string) => void) {
     } else if (tag === 'E') {
       onComplete(buffer);
     }
+  };
+}
+
+export type LiveMessage =
+  { t: 'req-patch'; patch: Partial<ApiRequest> } | { t: 'presence'; editing: boolean };
+
+export const REQUEST_SYNC_KEYS: (keyof ApiRequest)[] = [
+  'protocol',
+  'method',
+  'url',
+  'params',
+  'headers',
+  'bodyType',
+  'body',
+  'formData',
+  'graphqlVars',
+  'auth',
+  'tests',
+  'responseSchema',
+  'preScript',
+  'postScript',
+  'autoToken',
+];
+
+export function diffRequest(prev: ApiRequest, next: ApiRequest): Partial<ApiRequest> {
+  const patch: Partial<ApiRequest> = {};
+  for (const key of REQUEST_SYNC_KEYS) {
+    if (JSON.stringify(prev[key]) !== JSON.stringify(next[key])) {
+      (patch as Record<string, unknown>)[key] = next[key];
+    }
+  }
+  return patch;
+}
+
+const LIVE_TAG = 'L';
+
+export function sendLiveMessage(channel: RTCDataChannel | null, msg: LiveMessage): boolean {
+  if (!channel || channel.readyState !== 'open') return false;
+  try {
+    channel.send(LIVE_TAG + JSON.stringify(msg));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function createLiveReceiver(onMessage: (msg: LiveMessage) => void) {
+  return (data: string) => {
+    if (data[0] !== LIVE_TAG) return;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(data.slice(1));
+    } catch {
+      return;
+    }
+    const msg = parsed as LiveMessage;
+    if (!msg || (msg.t !== 'req-patch' && msg.t !== 'presence')) return;
+    if (msg.t === 'req-patch' && (typeof msg.patch !== 'object' || msg.patch === null)) return;
+    onMessage(msg);
   };
 }

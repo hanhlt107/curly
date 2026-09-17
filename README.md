@@ -19,6 +19,7 @@
 - [Vì sao chọn curly](#vì-sao-chọn-curly)
 - [Tính năng](#tính-năng)
 - [Kiểm thử tự động](#kiểm-thử-tự-động)
+- [Tests-as-code & CI](#tests-as-code--ci)
 - [Công nghệ](#công-nghệ)
 - [Bắt đầu nhanh](#bắt-đầu-nhanh)
 - [Đồng bộ cloud (tùy chọn)](#đồng-bộ-cloud-tùy-chọn)
@@ -52,6 +53,49 @@
 - **Collection Runner**: chạy toàn bộ collection, tự truyền biến giữa các request
 - Chạy lặp nhiều vòng, đặt delay, hoặc data-driven theo file CSV/JSON
 - Tùy chọn dừng khi gặp lỗi, xuất báo cáo kết quả ra JSON
+
+## Tests-as-code & CI
+
+Xuất collection ra file plain-text (`.http`-like) dễ đọc và diff bằng git, rồi chạy assertion trong Node cho CI.
+
+- **Export**: `Setting → Export tests-as-code` (hoặc `Ctrl / ⌘ + K` → "Export tests-as-code"). File `.http` chứa cây collection/folder, mỗi request gồm method, URL, headers, auth, body và khối `tests:`. Round-trip trở lại curly bằng nút **Import**.
+- **Chạy CLI**:
+
+```bash
+node scripts/run-tests.mjs curly-tests.http --env env.json
+# hoặc:
+npm run test:api -- curly-tests.http --env env.json
+```
+
+Runner gửi từng request bằng `fetch`, chạy assertion theo đúng cú pháp trong app, in pass/fail và thoát với mã ≠ 0 nếu có test lỗi. File `--env` nhận export environment của curly, mảng `variables`, object `{ "key": "value" }` hoặc file dạng `.env`.
+
+Ví dụ một request trong file:
+
+```
+### Lấy một bài viết
+GET {{baseUrl}}/posts/1
+
+tests:
+  status === 200
+  json id === 1
+  header content-type contains json
+```
+
+Snippet GitHub Actions:
+
+```yaml
+name: api-tests
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node scripts/run-tests.mjs curly-tests.http --env env.json
+```
 
 ## Công nghệ
 

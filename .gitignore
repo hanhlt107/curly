@@ -1,6 +1,7 @@
 node_modules
 dist
 dist-extension
+curly-extension.zip
 dist-ssr
 .vite
 *.local

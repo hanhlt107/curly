@@ -2,6 +2,7 @@ import axios, { AxiosError, type AxiosRequestConfig } from 'axios';
 import type { ApiRequest, ApiResponse, Cookie, KeyValue, RequestError } from '../types/request';
 import { buildCookieHeader, matchCookies } from './cookies';
 import { isDynamicVar, resolveDynamic } from './dynamicVars';
+import { isExtensionAvailable, sendViaExtension } from './extensionBridge';
 
 const client = axios.create({
   timeout: 30000,
@@ -186,6 +187,25 @@ export async function sendRequest(
     data,
   };
 
+  if (await isExtensionAvailable()) {
+    try {
+      const res = await sendViaExtension({ method: req.method, url, params, headers, data });
+      const raw = res.body ?? '';
+      return {
+        status: res.status,
+        statusText: res.statusText,
+        durationMs: res.durationMs,
+        sizeBytes: byteSize(raw),
+        headers: normalizeHeaders(res.headers),
+        data: parseResponseData(raw, res.headers),
+        raw,
+      };
+    } catch (err) {
+      const e = err as Error;
+      throw errorOf('Không gọi được request', e.message || 'Lỗi khi gọi qua extension curly.');
+    }
+  }
+
   const start = performance.now();
   try {
     const res = await client.request(config);
@@ -207,9 +227,24 @@ export async function sendRequest(
     }
     throw errorOf(
       'Không gọi được request',
-      ax.message + '. Có thể do URL sai, mất mạng, hoặc bị chặn CORS.',
+      ax.message +
+        '. Có thể do URL sai, mất mạng, hoặc bị chặn CORS. Cài đặt curly dạng extension để bỏ qua giới hạn CORS.',
     );
   }
+}
+
+function parseResponseData(raw: string, headers: Record<string, string>): unknown {
+  const ct = Object.entries(headers)
+    .find(([k]) => k.toLowerCase() === 'content-type')?.[1]
+    ?.toLowerCase();
+  if (ct && (ct.includes('application/json') || ct.includes('+json'))) {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return raw;
+    }
+  }
+  return raw;
 }
 
 function headerHas(headers: Record<string, string>, name: string): boolean {

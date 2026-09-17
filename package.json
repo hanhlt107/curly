@@ -20,13 +20,15 @@
     "dev": "vite",
     "build": "tsc -b && vite build && node scripts/prerender.mjs",
     "build:extension": "tsc -b && node scripts/build-extension.mjs",
+    "zip:extension": "npm run build:extension && powershell -NoProfile -Command \"Compress-Archive -Path 'dist-extension/*' -DestinationPath 'curly-extension.zip' -Force\"",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"*.{json,md,html}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"*.{json,md,html}\"",
-    "check": "npm run typecheck && npm run lint && npm run format:check"
+    "check": "npm run typecheck && npm run lint && npm run format:check",
+    "test:api": "node scripts/run-tests.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.116.0",

@@ -9,8 +9,10 @@ interface Props {
   mocksCount: number;
   onOpenMock: () => void;
   onExport: () => void;
+  onExportCode: () => void;
   onImport: () => void;
   onOpenShare: () => void;
+  onOpenLive: () => void;
   environments: Environment[];
   activeEnvId: string | null;
   onSelectEnv: (id: string | null) => void;
@@ -30,8 +32,10 @@ export default function SettingsMenu({
   mocksCount,
   onOpenMock,
   onExport,
+  onExportCode,
   onImport,
   onOpenShare,
+  onOpenLive,
   environments,
   activeEnvId,
   onSelectEnv,
@@ -108,6 +112,10 @@ export default function SettingsMenu({
             <span className="settings-ico">↥</span>
             <span className="settings-txt">Export workspace</span>
           </button>
+          <button className="settings-item" role="menuitem" onClick={() => run(onExportCode)}>
+            <span className="settings-ico">⌗</span>
+            <span className="settings-txt">Export tests-as-code</span>
+          </button>
           <button className="settings-item" role="menuitem" onClick={() => run(onImport)}>
             <span className="settings-ico">↧</span>
             <span className="settings-txt">Import workspace / Postman</span>
@@ -115,6 +123,10 @@ export default function SettingsMenu({
           <button className="settings-item" role="menuitem" onClick={() => run(onOpenShare)}>
             <span className="settings-ico">⇄</span>
             <span className="settings-txt">Chia sẻ P2P</span>
+          </button>
+          <button className="settings-item" role="menuitem" onClick={() => run(onOpenLive)}>
+            <span className="settings-ico">🎙️</span>
+            <span className="settings-txt">Live share request</span>
           </button>
 
           <div className="settings-sep" />

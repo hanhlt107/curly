@@ -7,6 +7,7 @@ import { sendRequest } from '../config/apiClient';
 import { runTests } from '../config/tests';
 import { autoExtractToken, runPostScript, runPreScript } from '../config/script';
 import { parseDataset, type DataRow } from '../config/dataset';
+import { downloadJson, readFileText } from '../config/download';
 
 interface Props {
   collection: Collection;
@@ -63,21 +64,17 @@ export default function RunnerModal({ collection, vars, onApplyVars, onClose }: 
   const fileRef = useRef<HTMLInputElement>(null);
   const cancel = useRef(false);
 
-  const loadDataFile = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const rows = parseDataset(String(reader.result), file.name);
-        setDataset(rows);
-        setDataName(`${file.name} · ${rows.length} dòng`);
-        setDataError('');
-      } catch (err) {
-        setDataset(null);
-        setDataName('');
-        setDataError((err as Error).message || 'Không đọc được file dữ liệu.');
-      }
-    };
-    reader.readAsText(file);
+  const loadDataFile = async (file: File) => {
+    try {
+      const rows = parseDataset(await readFileText(file), file.name);
+      setDataset(rows);
+      setDataName(`${file.name} · ${rows.length} dòng`);
+      setDataError('');
+    } catch (err) {
+      setDataset(null);
+      setDataName('');
+      setDataError((err as Error).message || 'Không đọc được file dữ liệu.');
+    }
   };
 
   const patch = (id: string, p: Partial<RunRow>) =>
@@ -208,13 +205,10 @@ export default function RunnerModal({ collection, vars, onApplyVars, onClose }: 
   };
 
   const exportReport = () => {
-    const blob = new Blob([JSON.stringify(buildReport(), null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `curly-report-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadJson(
+      buildReport(),
+      `curly-report-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`,
+    );
   };
 
   const [copiedReport, setCopiedReport] = useState(false);

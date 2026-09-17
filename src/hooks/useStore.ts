@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
 import { seedWorkspace } from '../config/seed';
 import {
   addFolder as addFolderTo,
@@ -34,6 +42,19 @@ import { setCustomDynamicVars } from '../config/dynamicVars';
 
 export { blankRequest };
 
+const str = (v: unknown, fallback: string): string => (typeof v === 'string' ? v : fallback);
+const uuid = (v: unknown): string => (typeof v === 'string' ? v : crypto.randomUUID());
+
+function listActions<T extends { id: string }>(setList: Dispatch<SetStateAction<T[]>>) {
+  return {
+    add: (item: T) => setList((prev) => [...prev, item]),
+    update: (id: string, patch: Partial<T>) =>
+      setList((prev) => prev.map((x) => (x.id === id ? { ...x, ...patch } : x))),
+    remove: (id: string) => setList((prev) => prev.filter((x) => x.id !== id)),
+    clear: () => setList([]),
+  };
+}
+
 const KEY = 'curly:state:v1';
 const MAX_RESPONSE_CHARS = 100_000;
 export const MAX_COLLECTIONS = 20;
@@ -65,7 +86,7 @@ function normalizeRequest(r: ApiRequest): ApiRequest {
 
 function normalizeSaved(sr: SavedRequest): SavedRequest {
   return {
-    id: typeof sr?.id === 'string' ? sr.id : crypto.randomUUID(),
+    id: uuid(sr?.id),
     name: sr?.name ?? 'Request',
     request: normalizeRequest(sr?.request ?? blankRequest()),
   };
@@ -73,7 +94,7 @@ function normalizeSaved(sr: SavedRequest): SavedRequest {
 
 function normalizeFolder(f: Folder): Folder {
   return {
-    id: typeof f?.id === 'string' ? f.id : crypto.randomUUID(),
+    id: uuid(f?.id),
     name: f?.name ?? 'Folder',
     requests: Array.isArray(f?.requests) ? f.requests.map(normalizeSaved) : [],
     folders: Array.isArray(f?.folders) ? f.folders.map(normalizeFolder) : [],
@@ -82,7 +103,7 @@ function normalizeFolder(f: Folder): Folder {
 
 function normalizeCollection(c: Collection): Collection {
   return {
-    id: typeof c?.id === 'string' ? c.id : crypto.randomUUID(),
+    id: uuid(c?.id),
     name: c?.name ?? 'Collection',
     requests: Array.isArray(c?.requests) ? c.requests.map(normalizeSaved) : [],
     folders: Array.isArray(c?.folders) ? c.folders.map(normalizeFolder) : [],
@@ -92,7 +113,7 @@ function normalizeCollection(c: Collection): Collection {
 function normalizeVars(list: KeyValue[]): KeyValue[] {
   if (!Array.isArray(list)) return [];
   return list.map((v) => ({
-    id: typeof v?.id === 'string' ? v.id : crypto.randomUUID(),
+    id: uuid(v?.id),
     enabled: v?.enabled ?? true,
     key: v?.key ?? '',
     value: v?.value ?? '',
@@ -103,27 +124,27 @@ function normalizeVars(list: KeyValue[]): KeyValue[] {
 function normalizeExtraction(e: WorkflowExtraction): WorkflowExtraction {
   const source = e?.source === 'header' || e?.source === 'status' ? e.source : 'body';
   return {
-    id: typeof e?.id === 'string' ? e.id : crypto.randomUUID(),
+    id: uuid(e?.id),
     source,
-    path: typeof e?.path === 'string' ? e.path : '',
-    varName: typeof e?.varName === 'string' ? e.varName : '',
+    path: str(e?.path, ''),
+    varName: str(e?.varName, ''),
   };
 }
 
 function normalizeStep(s: WorkflowStep): WorkflowStep {
   return {
-    id: typeof s?.id === 'string' ? s.id : crypto.randomUUID(),
-    collectionId: typeof s?.collectionId === 'string' ? s.collectionId : '',
-    requestId: typeof s?.requestId === 'string' ? s.requestId : '',
-    name: typeof s?.name === 'string' ? s.name : 'Request',
+    id: uuid(s?.id),
+    collectionId: str(s?.collectionId, ''),
+    requestId: str(s?.requestId, ''),
+    name: str(s?.name, 'Request'),
     extractions: Array.isArray(s?.extractions) ? s.extractions.map(normalizeExtraction) : [],
   };
 }
 
 function normalizeWorkflow(w: Workflow): Workflow {
   return {
-    id: typeof w?.id === 'string' ? w.id : crypto.randomUUID(),
-    name: typeof w?.name === 'string' ? w.name : 'Workflow',
+    id: uuid(w?.id),
+    name: str(w?.name, 'Workflow'),
     steps: Array.isArray(w?.steps) ? w.steps.map(normalizeStep) : [],
   };
 }
@@ -134,10 +155,10 @@ export function sanitizeDynVarName(raw: string): string {
 
 function normalizeCustomDynVar(v: CustomDynamicVar): CustomDynamicVar {
   return {
-    id: typeof v?.id === 'string' ? v.id : crypto.randomUUID(),
-    name: sanitizeDynVarName(typeof v?.name === 'string' ? v.name : ''),
-    template: typeof v?.template === 'string' ? v.template : '',
-    desc: typeof v?.desc === 'string' ? v.desc : '',
+    id: uuid(v?.id),
+    name: sanitizeDynVarName(str(v?.name, '')),
+    template: str(v?.template, ''),
+    desc: str(v?.desc, ''),
   };
 }
 
@@ -620,31 +641,16 @@ export function useStore() {
 
   const clearHistory = useCallback(() => setHistory([]), []);
 
-  const addCookie = useCallback((cookie: Cookie) => {
-    setCookies((prev) => [...prev, cookie]);
-  }, []);
+  const cookieActions = useMemo(() => listActions(setCookies), []);
+  const {
+    add: addCookie,
+    update: updateCookie,
+    remove: deleteCookie,
+    clear: clearCookies,
+  } = cookieActions;
 
-  const updateCookie = useCallback((id: string, patch: Partial<Cookie>) => {
-    setCookies((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-  }, []);
-
-  const deleteCookie = useCallback((id: string) => {
-    setCookies((prev) => prev.filter((c) => c.id !== id));
-  }, []);
-
-  const clearCookies = useCallback(() => setCookies([]), []);
-
-  const addMock = useCallback((mock: MockRule) => {
-    setMocks((prev) => [...prev, mock]);
-  }, []);
-
-  const updateMock = useCallback((id: string, patch: Partial<MockRule>) => {
-    setMocks((prev) => prev.map((m) => (m.id === id ? { ...m, ...patch } : m)));
-  }, []);
-
-  const deleteMock = useCallback((id: string) => {
-    setMocks((prev) => prev.filter((m) => m.id !== id));
-  }, []);
+  const mockActions = useMemo(() => listActions(setMocks), []);
+  const { add: addMock, update: updateMock, remove: deleteMock } = mockActions;
 
   const activeEnv = environments.find((e) => e.id === activeEnvId) ?? null;
 
@@ -663,17 +669,12 @@ export function useStore() {
     return wf.id;
   }, []);
 
-  const renameWorkflow = useCallback((id: string, name: string) => {
-    setWorkflows((prev) => prev.map((w) => (w.id === id ? { ...w, name } : w)));
-  }, []);
-
-  const deleteWorkflow = useCallback((id: string) => {
-    setWorkflows((prev) => prev.filter((w) => w.id !== id));
-  }, []);
-
-  const updateWorkflow = useCallback((id: string, patch: Partial<Workflow>) => {
-    setWorkflows((prev) => prev.map((w) => (w.id === id ? { ...w, ...patch } : w)));
-  }, []);
+  const workflowActions = useMemo(() => listActions(setWorkflows), []);
+  const { remove: deleteWorkflow, update: updateWorkflow } = workflowActions;
+  const renameWorkflow = useCallback(
+    (id: string, name: string) => workflowActions.update(id, { name }),
+    [workflowActions],
+  );
 
   const addCustomDynVar = useCallback(() => {
     const v: CustomDynamicVar = {
@@ -700,9 +701,8 @@ export function useStore() {
     );
   }, []);
 
-  const deleteCustomDynVar = useCallback((id: string) => {
-    setCustomDynVars((prev) => prev.filter((v) => v.id !== id));
-  }, []);
+  const dynVarActions = useMemo(() => listActions(setCustomDynVars), []);
+  const { remove: deleteCustomDynVar } = dynVarActions;
 
   const changeHistoryLimit = useCallback((limit: number) => {
     const next = Math.max(1, Math.floor(limit) || DEFAULT_HISTORY_LIMIT);

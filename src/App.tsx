@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import Button from './components/Button';
 import KebabMenu from './components/KebabMenu';
 import KeyValueEditor from './components/KeyValueEditor';
@@ -11,18 +11,13 @@ import SettingsMenu from './components/SettingsMenu';
 import MethodSelect from './components/MethodSelect';
 import ProtocolSelect from './components/ProtocolSelect';
 import CodeModal from './components/CodeModal';
-import CommandPalette, { type Command } from './components/CommandPalette';
-import { runTests, TEST_PLACEHOLDER, type TestResult } from './config/tests';
-import {
-  buildEnvironmentExport,
-  buildExport,
-  buildPostmanExport,
-  parseEnvironment,
-  parseWorkspace,
-} from './config/workspace';
-import { countRequests, findRequestFolderId, locateRequests } from './config/collections';
-import { parseOpenApiSpec } from './config/openapi';
-import { parseHar } from './config/har';
+import CommandPalette from './components/CommandPalette';
+import { runTests, TEST_PLACEHOLDER } from './config/tests';
+import { findRequestFolderId } from './config/collections';
+import { useModals } from './hooks/useModals';
+import { useResponses } from './hooks/useResponses';
+import { useWorkspaceIO } from './hooks/useWorkspaceIO';
+import { buildCommands } from './config/commands';
 import { toCurl } from './config/curl';
 import RunnerModal from './components/RunnerModal';
 import SaveModal from './components/SaveModal';
@@ -34,15 +29,16 @@ import MultiEnvModal from './components/MultiEnvModal';
 import WorkflowModal from './components/WorkflowModal';
 import DocsModal from './components/DocsModal';
 import DynamicVarsModal from './components/DynamicVarsModal';
-import P2PShareModal, { type ReceiveSummary } from './components/P2PShareModal';
-import { buildSharedWorkspace, type SharedWorkspace } from './config/p2p';
+import P2PShareModal from './components/P2PShareModal';
+import LiveShareModal from './components/LiveShareModal';
+import { buildSharedWorkspace } from './config/p2p';
 import GraphQLPanel from './components/GraphQLPanel';
 import InstallButton from './components/InstallButton';
 import { snapshotFromResponse } from './config/snapshot';
 import { useHotkeys } from './hooks/useHotkeys';
 import { useDialogs } from './hooks/useDialogs';
 import { matchMock, mockFromResponse, runMock } from './config/mocks';
-import { SCHEMA_PLACEHOLDER, validateSchema, type SchemaResult } from './config/schema';
+import { SCHEMA_PLACEHOLDER, validateSchema } from './config/schema';
 import { useAuth } from './hooks/useAuth';
 import { useCloudSync } from './hooks/useCloudSync';
 import { envToRecord, findUnresolvedVars, resolveVars, sendRequest } from './config/apiClient';
@@ -55,11 +51,9 @@ import {
 } from './config/script';
 import { useStore } from './hooks/useStore';
 import type {
-  ApiResponse,
   Auth,
   BodyType,
   HttpMethod,
-  KeyValue,
   Protocol,
   RequestError,
   SnapshotMode,
@@ -73,13 +67,6 @@ const PROTOCOLS: { value: Protocol; label: string }[] = [
 ];
 type ReqTab = 'params' | 'auth' | 'headers' | 'body' | 'tests' | 'script';
 
-function kvText(list: KeyValue[]): string {
-  return list
-    .filter((v) => v.enabled)
-    .map((v) => `${v.key} ${v.value}`)
-    .join(' ');
-}
-
 export default function App() {
   const store = useStore();
   const dialogs = useDialogs();
@@ -90,61 +77,21 @@ export default function App() {
     environments: store.environments,
     onPull: store.replaceWorkspace,
   });
-  const [authOpen, setAuthOpen] = useState(false);
+  const modals = useModals();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [reqTab, setReqTab] = useState<ReqTab>('params');
-  const [saveOpen, setSaveOpen] = useState(false);
-  const [codeOpen, setCodeOpen] = useState(false);
-  const [cookieOpen, setCookieOpen] = useState(false);
-  const [mockOpen, setMockOpen] = useState(false);
-  const [multiEnvOpen, setMultiEnvOpen] = useState(false);
-  const [workflowOpen, setWorkflowOpen] = useState(false);
-  const [envModalOpen, setEnvModalOpen] = useState(false);
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const [dynVarsOpen, setDynVarsOpen] = useState(false);
-  const [shareOpen, setShareOpen] = useState(false);
   const [runnerId, setRunnerId] = useState<string | null>(null);
   const [docsId, setDocsId] = useState<string | null>(null);
   const [showCurl, setShowCurl] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const urlRef = useRef<HTMLInputElement>(null);
 
-  type RespState = {
-    loading: boolean;
-    response: ApiResponse | null;
-    prevResponse?: ApiResponse | null;
-    error: RequestError | null;
-    tests?: TestResult[];
-    schema?: SchemaResult;
-    logs?: string[];
-  };
-  const RESP_KEY = 'curly:responses:v1';
-  const [respByTab, setRespByTab] = useState<Record<string, RespState>>(() => {
-    try {
-      const raw = localStorage.getItem(RESP_KEY);
-      return raw ? (JSON.parse(raw) as Record<string, RespState>) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  useEffect(() => {
-    const persistable: Record<string, RespState> = {};
-    for (const [id, s] of Object.entries(respByTab)) {
-      if (s.response || s.error) {
-        persistable[id] = { ...s, loading: false };
-      }
-    }
-    try {
-      localStorage.setItem(RESP_KEY, JSON.stringify(persistable));
-    } catch {
-      /* quota exceeded — bỏ qua */
-    }
-  }, [respByTab]);
+  const { respByTab, setResp, clearResp, getResp } = useResponses();
+  const io = useWorkspaceIO(store, dialogs);
 
   const tab = store.activeTab;
   const req = tab.request;
-  const state = respByTab[tab.id] ?? { loading: false, response: null, error: null };
+  const state = getResp(tab.id);
 
   const vars = useMemo(
     () => ({
@@ -157,19 +104,13 @@ export default function App() {
   const activeParams = req.params.filter((p) => p.enabled && p.key.trim()).length;
   const activeHeaders = req.headers.filter((h) => h.enabled && h.key.trim()).length;
 
-  const setState = (id: string, patch: Partial<(typeof respByTab)[string]>) =>
-    setRespByTab((prev) => ({
-      ...prev,
-      [id]: { ...(prev[id] ?? { loading: false, response: null, error: null }), ...patch },
-    }));
-
   const send = async () => {
     if (!req.url.trim()) {
-      setState(tab.id, { error: { message: 'Chưa nhập URL' }, response: null });
+      setResp(tab.id, { error: { message: 'Chưa nhập URL' }, response: null });
       return;
     }
     const prevResponse = respByTab[tab.id]?.response ?? null;
-    setState(tab.id, {
+    setResp(tab.id, {
       loading: true,
       error: null,
       response: null,
@@ -185,7 +126,7 @@ export default function App() {
       workVars = pre.vars;
       logs.push(...pre.logs);
       if (pre.error) {
-        setState(tab.id, {
+        setResp(tab.id, {
           loading: false,
           error: { message: 'Lỗi pre-request script', detail: pre.error },
           logs,
@@ -217,7 +158,7 @@ export default function App() {
       const schema = req.responseSchema.trim()
         ? validateSchema(req.responseSchema, res.data)
         : undefined;
-      setState(tab.id, {
+      setResp(tab.id, {
         loading: false,
         response: res,
         prevResponse,
@@ -227,7 +168,7 @@ export default function App() {
       });
       store.addHistory(req, res);
     } catch (err) {
-      setState(tab.id, {
+      setResp(tab.id, {
         loading: false,
         error: err as RequestError,
         logs: logs.length ? logs : undefined,
@@ -242,10 +183,7 @@ export default function App() {
 
   const closeTabWithState = (id: string) => {
     store.closeTab(id);
-    setRespByTab((prev) => {
-      const { [id]: _removed, ...rest } = prev;
-      return rest;
-    });
+    clearResp(id);
   };
 
   const stepTab = (delta: number) => {
@@ -260,8 +198,8 @@ export default function App() {
     onSend: () => {
       if (req.protocol === 'http') send();
     },
-    onSave: () => setSaveOpen(true),
-    onPalette: () => setPaletteOpen((o) => !o),
+    onSave: () => modals.open('save'),
+    onPalette: () => modals.toggle('palette'),
     onNewTab: () => store.openTab(),
     onCloseTab: () => closeTabWithState(store.activeTabId),
     onNextTab: () => stepTab(1),
@@ -306,95 +244,6 @@ export default function App() {
     navigator.clipboard?.writeText(curlPreview);
   };
 
-  const downloadJson = (data: unknown, filename: string) => {
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const exportWorkspace = () => {
-    const data = buildExport(store.collections, store.environments);
-    downloadJson(data, `curly-workspace-${new Date().toISOString().slice(0, 10)}.json`);
-  };
-
-  const exportCollectionAsPostman = (id: string) => {
-    const col = store.collections.find((c) => c.id === id);
-    if (!col) return;
-    const slug = col.name.replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '') || 'collection';
-    downloadJson(buildPostmanExport(col), `${slug}.postman_collection.json`);
-  };
-
-  const importFile = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const { collections, environments } = parseWorkspace(String(reader.result));
-        store.importWorkspace(collections, environments);
-      } catch (err) {
-        dialogs.toast((err as Error).message || 'Không đọc được file.', 'error');
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const receiveSharedWorkspace = async (
-    shared: SharedWorkspace,
-  ): Promise<ReceiveSummary | null> => {
-    const colCount = shared.collections?.length ?? 0;
-    const envCount = shared.environments?.length ?? 0;
-    const ok = await dialogs.confirm({
-      title: 'Nhận workspace từ thiết bị khác',
-      message: `Sẽ gộp ${colCount} collection và ${envCount} môi trường vào workspace hiện tại (không ghi đè dữ liệu cũ). Tiếp tục?`,
-      confirmLabel: 'Gộp vào',
-      cancelLabel: 'Hủy',
-    });
-    if (!ok) return null;
-    const { collections, environments } = parseWorkspace(JSON.stringify(shared));
-    store.importWorkspace(collections, environments);
-    if (Array.isArray(shared.globals) && shared.globals.length) {
-      const existingKeys = new Set(store.globals.map((v) => v.key.trim()).filter(Boolean));
-      const added = shared.globals
-        .filter((v) => v.key.trim() && !existingKeys.has(v.key.trim()))
-        .map((v) => ({
-          id: crypto.randomUUID(),
-          enabled: v.enabled ?? true,
-          key: v.key,
-          value: v.value,
-          ...(v.secret ? { secret: true as const } : {}),
-        }));
-      if (added.length) store.updateGlobals([...store.globals, ...added]);
-    }
-    const requests = collections.reduce((n, c) => n + countRequests(c), 0);
-    dialogs.toast(
-      `Đã nhận ${collections.length} collection, ${requests} request, ${environments.length} môi trường.`,
-      'success',
-    );
-    return { collections: collections.length, requests, environments: environments.length };
-  };
-
-  const exportEnvironment = (id: string) => {
-    const env = store.environments.find((e) => e.id === id);
-    if (!env) return;
-    const slug = env.name.replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '') || 'environment';
-    downloadJson(buildEnvironmentExport(env), `${slug}.curly-env.json`);
-  };
-
-  const importOpenApiSpec = (text: string): number => {
-    const { collections, environments } = parseOpenApiSpec(text);
-    store.importWorkspace(collections, environments);
-    return collections.reduce((n, c) => n + countRequests(c), 0);
-  };
-
-  const importHar = (text: string): number => {
-    const { collections, environments } = parseHar(text);
-    store.importWorkspace(collections, environments);
-    return collections.reduce((n, c) => n + countRequests(c), 0);
-  };
-
   const saveResponseAsMock = async () => {
     const res = respByTab[tab.id]?.response;
     if (!res) return;
@@ -407,108 +256,35 @@ export default function App() {
       confirmLabel: 'Mở Mock manager',
       cancelLabel: 'Để sau',
     });
-    if (open) setMockOpen(true);
+    if (open) modals.open('mock');
   };
 
-  const importEnvironmentFile = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        store.importEnvironment(parseEnvironment(String(reader.result)));
-      } catch (err) {
-        dialogs.toast((err as Error).message || 'Không đọc được file.', 'error');
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  const commands: Command[] = useMemo(() => {
-    const list: Command[] = [
-      { id: 'new-tab', group: 'Lệnh', label: 'Tab mới', hint: 'New', run: () => store.openTab() },
-      {
-        id: 'save',
-        group: 'Lệnh',
-        label: 'Lưu request',
-        hint: 'Save',
-        run: () => setSaveOpen(true),
-      },
-      {
-        id: 'code',
-        group: 'Lệnh',
-        label: 'Import cURL / Code snippet',
-        run: () => setCodeOpen(true),
-      },
-      {
-        id: 'cookies',
-        group: 'Lệnh',
-        label: 'Cookie jar',
-        run: () => setCookieOpen(true),
-      },
-      {
-        id: 'mocks',
-        group: 'Lệnh',
-        label: 'Mock server',
-        run: () => setMockOpen(true),
-      },
-      {
-        id: 'mock-mode',
-        group: 'Lệnh',
-        label: store.mockMode ? 'Tắt Mock mode' : 'Bật Mock mode',
-        run: () => store.setMockMode((v) => !v),
-      },
-      { id: 'export', group: 'Lệnh', label: 'Export workspace', run: exportWorkspace },
-      {
-        id: 'import',
-        group: 'Lệnh',
-        label: 'Import workspace / Postman',
-        run: () => fileRef.current?.click(),
-      },
-      {
-        id: 'no-env',
-        group: 'Environment',
-        label: 'No Environment',
-        run: () => store.setActiveEnvId(null),
-      },
-    ];
-    for (const c of store.collections) {
-      list.push({
-        id: `docs-${c.id}`,
-        group: c.name,
-        label: `📄 Tài liệu: ${c.name}`,
-        run: () => setDocsId(c.id),
-      });
-    }
-    for (const loc of locateRequests(store.collections)) {
-      const r = loc.saved.request;
-      const deep = [
-        kvText(r.params),
-        kvText(r.headers),
-        kvText(r.formData),
-        r.body,
-        r.graphqlVars,
-      ].join(' ');
-      list.push({
-        id: `req-${loc.saved.id}`,
-        group: loc.collectionName,
-        label: loc.saved.name,
-        method: r.method,
-        url: r.url,
-        path: loc.path,
-        haystack: `${r.url} ${loc.path} ${deep}`,
-        run: () => store.openSaved(loc.saved),
-      });
-    }
-    for (const e of store.environments) {
-      list.push({
-        id: `env-${e.id}`,
-        group: 'Environment',
-        label: e.name,
-        run: () => store.setActiveEnvId(e.id),
-      });
-    }
-    return list;
+  const commands = useMemo(
+    () =>
+      buildCommands(
+        {
+          collections: store.collections,
+          environments: store.environments,
+          mockMode: store.mockMode,
+        },
+        {
+          newTab: () => store.openTab(),
+          openSave: () => modals.open('save'),
+          openCode: () => modals.open('code'),
+          openCookies: () => modals.open('cookie'),
+          openMock: () => modals.open('mock'),
+          toggleMockMode: () => store.setMockMode((v) => !v),
+          exportWorkspace: io.exportWorkspace,
+          exportTestsAsCode: io.exportTestsAsCode,
+          importFile: () => fileRef.current?.click(),
+          setActiveEnvId: store.setActiveEnvId,
+          openDocs: (id) => setDocsId(id),
+          openSaved: store.openSaved,
+        },
+      ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.collections, store.environments, store.mockMode]);
+    [store.collections, store.environments, store.mockMode],
+  );
 
   return (
     <div className="app">
@@ -535,43 +311,45 @@ export default function App() {
           <InstallButton />
           <Button
             size="sm"
-            onClick={() => setWorkflowOpen(true)}
+            onClick={() => modals.open('workflow')}
             title="Nối nhiều request thành chuỗi"
           >
             ⚡ Workflow
           </Button>
-          <Button size="sm" onClick={() => setPaletteOpen(true)} title="Ctrl/⌘ + K">
+          <Button size="sm" onClick={() => modals.open('palette')} title="Ctrl/⌘ + K">
             <span className="kbd">⌘K</span> Tìm nhanh
           </Button>
           <input
             ref={fileRef}
             type="file"
-            accept="application/json,.json"
+            accept="application/json,.json,.http,.txt"
             style={{ display: 'none' }}
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) importFile(f);
+              if (f) io.importFile(f);
               e.target.value = '';
             }}
           />
           <SettingsMenu
             cookiesCount={store.cookies.length}
-            onOpenCookies={() => setCookieOpen(true)}
+            onOpenCookies={() => modals.open('cookie')}
             mockMode={store.mockMode}
             mocksCount={store.mocks.length}
-            onOpenMock={() => setMockOpen(true)}
-            onExport={exportWorkspace}
+            onOpenMock={() => modals.open('mock')}
+            onExport={io.exportWorkspace}
+            onExportCode={io.exportTestsAsCode}
             onImport={() => fileRef.current?.click()}
-            onOpenShare={() => setShareOpen(true)}
+            onOpenShare={() => modals.open('share')}
+            onOpenLive={() => modals.open('live')}
             environments={store.environments}
             activeEnvId={store.activeEnvId}
             onSelectEnv={store.setActiveEnvId}
-            onManageEnv={() => setEnvModalOpen(true)}
+            onManageEnv={() => modals.open('env')}
             authEnabled={auth.enabled}
             authEmail={auth.user?.email ?? null}
             syncStatus={sync.status}
             syncLabel={syncLabel}
-            onSignIn={() => setAuthOpen(true)}
+            onSignIn={() => modals.open('auth')}
             onSignOut={auth.signOut}
           />
         </div>
@@ -597,7 +375,7 @@ export default function App() {
               dirty: false,
             });
             if (h.response) {
-              setState(newId, { loading: false, response: h.response, error: null });
+              setResp(newId, { loading: false, response: h.response, error: null });
             }
             setSidebarOpen(false);
           }}
@@ -605,7 +383,7 @@ export default function App() {
           onRenameCollection={store.renameCollection}
           onRunCollection={setRunnerId}
           onDocsCollection={setDocsId}
-          onExportCollection={exportCollectionAsPostman}
+          onExportCollection={io.exportCollectionAsPostman}
           onDeleteCollection={store.deleteCollection}
           onDeleteSaved={store.deleteSaved}
           onDuplicateSaved={store.duplicateSaved}
@@ -671,7 +449,11 @@ export default function App() {
                 {state.loading ? <span className="btn-spinner" /> : 'Send'}
               </Button>
             )}
-            <Button variant="primary" onClick={() => setSaveOpen(true)} title="Lưu vào collection">
+            <Button
+              variant="primary"
+              onClick={() => modals.open('save')}
+              title="Lưu vào collection"
+            >
               Save
             </Button>
             <KebabMenu
@@ -682,13 +464,13 @@ export default function App() {
                   icon: '</>',
                   label: 'Code / cURL',
                   title: 'Import cURL / xuất code snippet',
-                  onClick: () => setCodeOpen(true),
+                  onClick: () => modals.open('code'),
                 },
                 {
                   icon: '{{$}}',
                   label: 'Biến động',
                   title: 'Biến động: {{$uuid}}, {{$timestamp}}…',
-                  onClick: () => setDynVarsOpen(true),
+                  onClick: () => modals.open('dynVars'),
                 },
                 ...(req.protocol === 'http'
                   ? [
@@ -697,7 +479,7 @@ export default function App() {
                         label: 'So sánh môi trường',
                         title: 'Chạy request này trên mọi môi trường và so sánh',
                         disabled: !req.url.trim() || store.environments.length === 0,
-                        onClick: () => setMultiEnvOpen(true),
+                        onClick: () => modals.open('multiEnv'),
                       },
                     ]
                   : []),
@@ -946,7 +728,7 @@ export default function App() {
         </main>
       </div>
 
-      {saveOpen &&
+      {modals.isOpen('save') &&
         (() => {
           const existingCol = tab.savedRequestId
             ? store.collections.find(
@@ -966,22 +748,22 @@ export default function App() {
               onSave={(cid, folderId, name) =>
                 store.saveTabToCollection(tab.id, cid, folderId, name)
               }
-              onClose={() => setSaveOpen(false)}
+              onClose={() => modals.close('save')}
             />
           );
         })()}
 
-      {codeOpen && (
+      {modals.isOpen('code') && (
         <CodeModal
           request={req}
           onImport={(r) => store.openRequest(r, r.url || 'Imported')}
-          onImportSpec={importOpenApiSpec}
-          onImportHar={importHar}
-          onClose={() => setCodeOpen(false)}
+          onImportSpec={io.importOpenApiSpec}
+          onImportHar={io.importHar}
+          onClose={() => modals.close('code')}
         />
       )}
 
-      {cookieOpen && (
+      {modals.isOpen('cookie') && (
         <CookieJarModal
           cookies={store.cookies}
           enabled={store.cookieJarEnabled}
@@ -990,11 +772,11 @@ export default function App() {
           onUpdate={store.updateCookie}
           onDelete={store.deleteCookie}
           onClearAll={store.clearCookies}
-          onClose={() => setCookieOpen(false)}
+          onClose={() => modals.close('cookie')}
         />
       )}
 
-      {mockOpen && (
+      {modals.isOpen('mock') && (
         <MockManagerModal
           mocks={store.mocks}
           mockMode={store.mockMode}
@@ -1002,11 +784,11 @@ export default function App() {
           onAdd={store.addMock}
           onUpdate={store.updateMock}
           onDelete={store.deleteMock}
-          onClose={() => setMockOpen(false)}
+          onClose={() => modals.close('mock')}
         />
       )}
 
-      {envModalOpen && (
+      {modals.isOpen('env') && (
         <EnvironmentModal
           environments={store.environments}
           globals={store.globals}
@@ -1015,14 +797,14 @@ export default function App() {
           onUpdate={store.updateEnvironment}
           onDelete={store.deleteEnvironment}
           onUpdateGlobals={store.updateGlobals}
-          onExportEnv={exportEnvironment}
-          onImportEnv={importEnvironmentFile}
+          onExportEnv={io.exportEnvironment}
+          onImportEnv={io.importEnvironmentFile}
           onImportDotenv={store.importDotenv}
-          onClose={() => setEnvModalOpen(false)}
+          onClose={() => modals.close('env')}
         />
       )}
 
-      {multiEnvOpen && (
+      {modals.isOpen('multiEnv') && (
         <MultiEnvModal
           req={req}
           environments={store.environments}
@@ -1030,11 +812,11 @@ export default function App() {
           cookies={store.cookieJarEnabled ? store.cookies : []}
           mockMode={store.mockMode}
           mocks={store.mocks}
-          onClose={() => setMultiEnvOpen(false)}
+          onClose={() => modals.close('multiEnv')}
         />
       )}
 
-      {workflowOpen && (
+      {modals.isOpen('workflow') && (
         <WorkflowModal
           workflows={store.workflows}
           collections={store.collections}
@@ -1044,33 +826,43 @@ export default function App() {
           onDelete={store.deleteWorkflow}
           onUpdate={store.updateWorkflow}
           onApplyVars={store.applyVars}
-          onClose={() => setWorkflowOpen(false)}
+          onClose={() => modals.close('workflow')}
         />
       )}
 
-      {paletteOpen && <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />}
+      {modals.isOpen('palette') && (
+        <CommandPalette commands={commands} onClose={() => modals.close('palette')} />
+      )}
 
-      {dynVarsOpen && (
+      {modals.isOpen('dynVars') && (
         <DynamicVarsModal
           customVars={store.customDynVars}
           onAdd={store.addCustomDynVar}
           onUpdate={store.updateCustomDynVar}
           onDelete={store.deleteCustomDynVar}
-          onClose={() => setDynVarsOpen(false)}
+          onClose={() => modals.close('dynVars')}
         />
       )}
 
-      {shareOpen && (
+      {modals.isOpen('share') && (
         <P2PShareModal
           getWorkspace={() =>
             buildSharedWorkspace(store.collections, store.environments, store.globals)
           }
-          onReceive={receiveSharedWorkspace}
-          onClose={() => setShareOpen(false)}
+          onReceive={io.receiveSharedWorkspace}
+          onClose={() => modals.close('share')}
         />
       )}
 
-      {authOpen && <AuthModal auth={auth} onClose={() => setAuthOpen(false)} />}
+      {modals.isOpen('live') && (
+        <LiveShareModal
+          request={store.activeTab.request}
+          onPatch={store.updateActiveRequest}
+          onClose={() => modals.close('live')}
+        />
+      )}
+
+      {modals.isOpen('auth') && <AuthModal auth={auth} onClose={() => modals.close('auth')} />}
 
       {runnerId &&
         (() => {

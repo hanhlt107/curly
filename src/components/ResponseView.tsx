@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 import Button from './Button';
+import JsonNode from './response/JsonNode';
+import MiniChart from './response/MiniChart';
 import type { ApiResponse, RequestError, RequestSnapshot, SnapshotMode } from '../types/request';
 import type { TestResult } from '../config/tests';
 import type { SchemaResult } from '../config/schema';
@@ -8,12 +10,19 @@ import { diffValues, diffSummary } from '../config/diff';
 import { evalJsonPath } from '../config/jsonpath';
 import { generateTypes, TYPE_LANGS, type TypeLang } from '../config/typegen';
 import {
+  parseCookies,
+  statusClass,
+  prettify,
+  formatSize,
+  highlightJson,
+  highlightSearch,
+} from '../config/responseFormat';
+import {
   cellText,
   detectViz,
   imageDataUrl,
   isFlatObjectArray,
   isNumberArray,
-  isObjectRecord,
   numericColumns,
   parseJson,
   tableColumns,
@@ -49,186 +58,6 @@ type Tab =
   | 'console';
 type VizMode = 'tree' | 'table' | 'chart';
 type ChartKind = 'bar' | 'line';
-
-function parseCookies(
-  headers: Record<string, string>,
-): { name: string; value: string; attrs: string }[] {
-  const raw = headers['set-cookie'];
-  if (!raw) return [];
-  return raw
-    .split(/,(?=[^;]+?=)/)
-    .map((c) => c.trim())
-    .filter(Boolean)
-    .map((c) => {
-      const [pair, ...rest] = c.split(';');
-      const eq = pair.indexOf('=');
-      return {
-        name: eq > -1 ? pair.slice(0, eq).trim() : pair.trim(),
-        value: eq > -1 ? pair.slice(eq + 1).trim() : '',
-        attrs: rest.map((r) => r.trim()).join('; '),
-      };
-    });
-}
-
-function statusClass(status: number): string {
-  if (status >= 200 && status < 300) return 'ok';
-  if (status >= 300 && status < 400) return 'redirect';
-  if (status >= 400) return 'error';
-  return '';
-}
-
-function prettify(data: unknown, raw: string): string {
-  if (typeof data === 'string') {
-    try {
-      return JSON.stringify(JSON.parse(data), null, 2);
-    } catch {
-      return data;
-    }
-  }
-  try {
-    return JSON.stringify(data, null, 2);
-  } catch {
-    return raw;
-  }
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-}
-
-const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-/** Tô màu JSON đơn giản bằng regex → HTML. */
-function highlightJson(text: string): string {
-  const safe = esc(text);
-  return safe.replace(
-    /("(\\.|[^"\\])*"(\s*:)?)|(\b-?\d+(\.\d+)?([eE][+-]?\d+)?\b)|\b(true|false|null)\b/g,
-    (m) => {
-      let cls = 'j-num';
-      if (/^"/.test(m)) cls = /:$/.test(m.trim()) ? 'j-key' : 'j-str';
-      else if (/true|false/.test(m)) cls = 'j-bool';
-      else if (/null/.test(m)) cls = 'j-null';
-      return `<span class="${cls}">${m}</span>`;
-    },
-  );
-}
-
-function highlightSearch(html: string, term: string): string {
-  if (!term) return html;
-  const safe = esc(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return html.replace(new RegExp(`(${safe})`, 'gi'), '<mark>$1</mark>');
-}
-
-function valueType(v: unknown): string {
-  if (v === null) return 'null';
-  if (Array.isArray(v)) return 'array';
-  return typeof v;
-}
-
-function JsonNode({ label, value, depth }: { label?: string; value: unknown; depth: number }) {
-  const isArr = Array.isArray(value);
-  const isObj = isObjectRecord(value);
-  const [open, setOpen] = useState(depth < 1);
-
-  if (!isArr && !isObj) {
-    return (
-      <div className="jt-row" style={{ paddingLeft: depth * 14 }}>
-        {label !== undefined && <span className="jt-key">{label}:</span>}
-        <span className={`jt-val jt-${valueType(value)}`}>{cellText(value)}</span>
-      </div>
-    );
-  }
-
-  const entries: [string, unknown][] = isArr
-    ? (value as unknown[]).map((v, i) => [String(i), v])
-    : Object.entries(value as Record<string, unknown>);
-  const summary = isArr ? `array[${entries.length}]` : `object{${entries.length}}`;
-
-  return (
-    <div className="jt-node">
-      <div
-        className="jt-row jt-toggle"
-        style={{ paddingLeft: depth * 14 }}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span className="jt-caret">{open ? '▾' : '▸'}</span>
-        {label !== undefined && <span className="jt-key">{label}:</span>}
-        <span className="jt-type">{summary}</span>
-      </div>
-      {open && entries.map(([k, v]) => <JsonNode key={k} label={k} value={v} depth={depth + 1} />)}
-    </div>
-  );
-}
-
-function MiniChart({
-  values,
-  labels,
-  kind,
-}: {
-  values: number[];
-  labels: string[];
-  kind: ChartKind;
-}) {
-  const W = 680;
-  const H = 240;
-  const pad = 30;
-  const innerW = W - pad * 2;
-  const innerH = H - pad * 2;
-  const max = Math.max(...values, 0);
-  const min = Math.min(...values, 0);
-  const range = max - min || 1;
-  const y = (v: number) => pad + innerH - ((v - min) / range) * innerH;
-  const showLabels = values.length <= 16;
-  const zeroY = y(0);
-
-  return (
-    <svg className="viz-chart" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
-      <line x1={pad} y1={zeroY} x2={W - pad} y2={zeroY} className="viz-axis" />
-      {kind === 'bar'
-        ? values.map((v, i) => {
-            const bw = innerW / values.length;
-            const bx = pad + i * bw + bw * 0.15;
-            const top = Math.min(y(v), zeroY);
-            const hgt = Math.abs(zeroY - y(v));
-            return (
-              <g key={i}>
-                <rect x={bx} y={top} width={bw * 0.7} height={hgt} className="viz-bar" />
-                {showLabels && (
-                  <text x={bx + bw * 0.35} y={H - 8} className="viz-label" textAnchor="middle">
-                    {labels[i]}
-                  </text>
-                )}
-              </g>
-            );
-          })
-        : (() => {
-            const px = (i: number) =>
-              pad + (values.length === 1 ? innerW / 2 : (i / (values.length - 1)) * innerW);
-            const pts = values.map((v, i) => `${px(i)},${y(v)}`).join(' ');
-            return (
-              <g>
-                <polyline points={pts} className="viz-line" fill="none" />
-                {values.map((v, i) => (
-                  <g key={i}>
-                    <circle cx={px(i)} cy={y(v)} r={3} className="viz-dot" />
-                    {showLabels && (
-                      <text x={px(i)} y={H - 8} className="viz-label" textAnchor="middle">
-                        {labels[i]}
-                      </text>
-                    )}
-                  </g>
-                ))}
-              </g>
-            );
-          })()}
-      <text x={pad} y={pad - 10} className="viz-label">
-        {max}
-      </text>
-    </svg>
-  );
-}
 
 export default function ResponseView({
   loading,
