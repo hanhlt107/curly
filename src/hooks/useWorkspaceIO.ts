@@ -6,6 +6,7 @@ import {
   parseWorkspace,
 } from '../config/workspace';
 import { buildCodeExport, isCodeExport, parseCodeExport } from '../config/codeExport';
+import { buildN8nWorkflow, n8nWorkflowFilename } from '../config/n8nExport';
 import { downloadJson, downloadText, readFileText, slugify } from '../config/download';
 import { parseOpenApiSpec } from '../config/openapi';
 import { parseHar } from '../config/har';
@@ -29,6 +30,10 @@ export function useWorkspaceIO(
       buildCodeExport(store.collections),
       `curly-tests-${new Date().toISOString().slice(0, 10)}.http`,
     );
+  };
+
+  const exportN8nWorkflow = () => {
+    downloadJson(buildN8nWorkflow(store.collections), n8nWorkflowFilename());
   };
 
   const exportCollectionAsPostman = (id: string) => {
@@ -117,6 +122,7 @@ export function useWorkspaceIO(
   return {
     exportWorkspace,
     exportTestsAsCode,
+    exportN8nWorkflow,
     exportCollectionAsPostman,
     exportEnvironment,
     importFile,

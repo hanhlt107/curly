@@ -20,6 +20,7 @@
 - [Tính năng](#tính-năng)
 - [Kiểm thử tự động](#kiểm-thử-tự-động)
 - [Tests-as-code & CI](#tests-as-code--ci)
+- [Giám sát bằng n8n](#giám-sát-bằng-n8n)
 - [Công nghệ](#công-nghệ)
 - [Bắt đầu nhanh](#bắt-đầu-nhanh)
 - [Đồng bộ cloud (tùy chọn)](#đồng-bộ-cloud-tùy-chọn)
@@ -96,6 +97,17 @@ jobs:
           node-version: 20
       - run: node scripts/run-tests.mjs curly-tests.http --env env.json
 ```
+
+## Giám sát bằng n8n
+
+Ngoài chạy thủ công và CI, bạn có thể biến collection thành một workflow [n8n](https://n8n.io) để **giám sát API tự động** và cảnh báo khi có sự cố.
+
+- **Export**: `Setting → Export n8n workflow` (hoặc `Ctrl / ⌘ + K` → "Export n8n workflow"). Tải về file `.json` import thẳng vào n8n.
+- Workflow sinh ra gồm: một **Schedule Trigger** (mặc định 15 phút/lần) → mỗi request thành một **HTTP Request node** → một **Code node** chấm lại đúng các assertion trong `tests:` của curly → gửi **cảnh báo Discord** khi request lỗi.
+- Request không có `tests:` vẫn được giám sát uptime tối thiểu (`status < 400`).
+- Sau khi import, mở node **Cảnh báo Discord** dán Webhook URL thật, rồi bấm **Publish**. Node **Hướng dẫn** (sticky note) trong workflow ghi rõ các bước cần chỉnh.
+
+> Assertion `time <...>` được bỏ qua trong bản n8n vì HTTP Request node không cung cấp thời gian phản hồi; các assertion `status`, `header`, `body`, `json` giữ nguyên ngữ nghĩa như trong curly.
 
 ## Công nghệ
 
