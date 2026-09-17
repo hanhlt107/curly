@@ -276,7 +276,6 @@ export default function App() {
           toggleMockMode: () => store.setMockMode((v) => !v),
           exportWorkspace: io.exportWorkspace,
           exportTestsAsCode: io.exportTestsAsCode,
-          exportN8nWorkflow: io.exportN8nWorkflow,
           importFile: () => fileRef.current?.click(),
           setActiveEnvId: store.setActiveEnvId,
           openDocs: (id) => setDocsId(id),
@@ -339,7 +338,6 @@ export default function App() {
             onOpenMock={() => modals.open('mock')}
             onExport={io.exportWorkspace}
             onExportCode={io.exportTestsAsCode}
-            onExportN8n={io.exportN8nWorkflow}
             onImport={() => fileRef.current?.click()}
             onOpenShare={() => modals.open('share')}
             onOpenLive={() => modals.open('live')}

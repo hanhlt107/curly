@@ -10,7 +10,6 @@ interface Props {
   onOpenMock: () => void;
   onExport: () => void;
   onExportCode: () => void;
-  onExportN8n: () => void;
   onImport: () => void;
   onOpenShare: () => void;
   onOpenLive: () => void;
@@ -34,7 +33,6 @@ export default function SettingsMenu({
   onOpenMock,
   onExport,
   onExportCode,
-  onExportN8n,
   onImport,
   onOpenShare,
   onOpenLive,
@@ -117,10 +115,6 @@ export default function SettingsMenu({
           <button className="settings-item" role="menuitem" onClick={() => run(onExportCode)}>
             <span className="settings-ico">⌗</span>
             <span className="settings-txt">Export tests-as-code</span>
-          </button>
-          <button className="settings-item" role="menuitem" onClick={() => run(onExportN8n)}>
-            <span className="settings-ico">⚡</span>
-            <span className="settings-txt">Export n8n workflow</span>
           </button>
           <button className="settings-item" role="menuitem" onClick={() => run(onImport)}>
             <span className="settings-ico">↧</span>

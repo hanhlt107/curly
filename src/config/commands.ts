@@ -11,7 +11,6 @@ export interface CommandActions {
   toggleMockMode: () => void;
   exportWorkspace: () => void;
   exportTestsAsCode: () => void;
-  exportN8nWorkflow: () => void;
   importFile: () => void;
   setActiveEnvId: (id: string | null) => void;
   openDocs: (collectionId: string) => void;
@@ -47,12 +46,6 @@ export function buildCommands(
       group: 'Lệnh',
       label: 'Export tests-as-code (.http)',
       run: actions.exportTestsAsCode,
-    },
-    {
-      id: 'export-n8n',
-      group: 'Lệnh',
-      label: 'Export n8n workflow (giám sát API)',
-      run: actions.exportN8nWorkflow,
     },
     {
       id: 'import',
